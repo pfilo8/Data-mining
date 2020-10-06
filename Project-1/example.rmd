@@ -14,4 +14,8 @@ header-includes:
 - \floatplacement{figure}{H}
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.align='center', message=F, warning=F) 
+```
 
