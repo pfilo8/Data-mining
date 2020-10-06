@@ -1,0 +1,17 @@
+---
+title: "Report I"
+author: "Anna Szymanek (...), Patryk Wielopolski (234891)"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+  toc: True
+  number_sections: True
+header-includes:
+- \usepackage{amsmath}
+- \usepackage{float}
+- \usepackage{listings}
+- \floatplacement{figure}{H}
+---
+
+
