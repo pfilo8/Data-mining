@@ -58,15 +58,16 @@ df <- df %>% dplyr::select(age, duration, y)
 
 ```{r}
 # Experiment design
-
 tasks = list(
   TaskClassif$new(id = "full", backend = df, target = 'y')
+  # Next tasks ... i.e. data with different features
 )
 
 learners = c(
   "classif.kknn",
   "classif.lda",
   "classif.qda"
+  # Other models ...
 )
 learners = lapply(learners, lrn, predict_type = "prob", predict_sets = c("train", "test"))
 
