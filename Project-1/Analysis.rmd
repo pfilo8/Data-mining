@@ -1,6 +1,6 @@
 ---
 title: "Report I"
-author: "Anna Szymanek (...), Patryk Wielopolski (234891)"
+author: "Anna Szymanek (230042), Patryk Wielopolski (234891)"
 output:
   pdf_document: default
   word_document: default
