@@ -19,3 +19,74 @@ knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(fig.align='center', message=F, warning=F) 
 ```
 
+Requirements:
+
+* Descriptive analysis and data visualization
+
+** Objective
+*** Basic properties of variables / features (range, properties, distribution)
+*** Analysis of correlation of features
+*** Initial assessment of discriminative ability of consecutive features (i.e. ability to separate objects from different classes)
+*** Identification of missing values and outliers
+
+** Mehtods
+*** Summary statistics
+*** Plots
+
+* Classification
+** Objective - classification rule
+** Methods: LDA, QDA, KNN, other
+** Assessment of accuracy: Holdout / Cross Validation
+
+```{r}
+library(tidyverse)
+library(mlr3)
+library(mlr3learners)
+
+library(kknn)
+library(MASS)
+```
+
+```{r}
+# Data transformations
+
+df <- read_csv2('data/bank-additional-full.csv')
+df[, 'y'] <- as.factor(df$y)
+
+df <- df %>% dplyr::select(age, duration, y)
+```
+
+```{r}
+# Experiment design
+
+tasks = list(
+  TaskClassif$new(id = "full", backend = df, target = 'y')
+)
+
+learners = c(
+  "classif.kknn",
+  "classif.lda",
+  "classif.qda"
+)
+learners = lapply(learners, lrn, predict_type = "prob", predict_sets = c("train", "test"))
+
+resamplings = rsmp("cv", folds = 3)
+design = benchmark_grid(tasks, learners, resamplings)
+```
+
+```{r}
+# Training
+bmr = benchmark(design)
+```
+
+
+```{r}
+# Results
+measures = list(
+  msr("classif.auc", id = "auc_train", predict_sets = "train"),
+  msr("classif.auc", id = "auc_test")
+)
+
+bmr$aggregate(measures)
+```
+
