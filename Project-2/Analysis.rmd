@@ -1,0 +1,53 @@
+---
+title: "Report I"
+author: "Anna Szymanek (230042), Patryk Wielopolski (234891)"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+  toc: True
+  number_sections: True
+header-includes:
+- \usepackage{amsmath}
+- \usepackage{float}
+- \usepackage{listings}
+- \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(fig.align='center', message=F, warning=F) 
+```
+
+\section{Introduction}
+
+Why was the study undertaken? What was the research question, the tested hypothesis or the purpose of the research?
+
+- Problem description and research question formulation
+Short information on the specicity of the problem considered. What questions do we want to answer analysing the data? What potential benefits may result from the analysis? For example, the benefit could be: a better diagnostic method, better efficiency in detecting bad/goo d customers applying for a loan, separating groups of customers who can be targeted witha special offer, identifying relevant features/variables, etc.
+
+- Data characteristics
+Data size, number of cases and features, types of features, information about missing values, information on unusual values (e.g. non-standard coding of missing values, etc.)
+
+\section{Methods}
+
+When, where, and how was the study done? What materials were used or who was included in the study groups (patients, etc.)
+
+- Methods and algorithms used in the project
+What methods / algorithms have been used? Which tasks these methods / algorithms were used for? (e.g. preliminary analysis and visualization, classifiaction, prediction, cluster analysis, etc.)
+
+\section{Results}
+
+What answer was found to the research question; what did the study find? Was the tested hypothesis true?
+
+Results presented in the form of corresponding tables, graphs and diagrams. Note that only the most important results should be included in the report, whereas additional results can be added as attachments.
+
+\section{Discussion}
+
+What might the answer imply and why does it matter? How does it fit in with what other researchers have found? What are the perspectives for future research?
+
+- Conclusions
+Precise conclusions: what can be concluded from the analyses carried out? How these conclusions could be put into practice? (e.g. development of a new / better strategy in the company, new / better diagnostic methods, etc.)
+
+- Further research suggestions
+Short information on further possible directions of research (what could / should be further studied and what additional methods / algorithms could be used?)

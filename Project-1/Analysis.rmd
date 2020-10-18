@@ -15,48 +15,159 @@ header-includes:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_chunk$set(fig.align='center', message=F, warning=F) 
 ```
 
-Requirements:
-
-* Descriptive analysis and data visualization
-
-** Objective
-*** Basic properties of variables / features (range, properties, distribution)
-*** Analysis of correlation of features
-*** Initial assessment of discriminative ability of consecutive features (i.e. ability to separate objects from different classes)
-*** Identification of missing values and outliers
-
-** Mehtods
-*** Summary statistics
-*** Plots
-
-* Classification
-** Objective - classification rule
-** Methods: LDA, QDA, KNN, other
-** Assessment of accuracy: Holdout / Cross Validation
-
 ```{r}
+library(DataExplorer)
 library(tidyverse)
 library(mlr3)
 library(mlr3learners)
 
 library(kknn)
 library(MASS)
-```
-
-```{r}
-# Data transformations
 
 df <- read_csv2('data/bank-additional-full.csv')
 df[, 'y'] <- as.factor(df$y)
+```
 
-df <- df %>% dplyr::select(age, duration, y)
+\section{Introduction}
+
+# Task descripion
+Why was the study undertaken? What was the research question, the tested hypothesis or the purpose of the research?
+
+- Problem description and research question formulation
+Short information on the specicity of the problem considered. What questions do we want to answer analysing the data? What potential benefits may result from the analysis? For example, the benefit could be: a better diagnostic method, better efficiency in detecting bad/goo d customers applying for a loan, separating groups of customers who can be targeted witha special offer, identifying relevant features/variables, etc.
+# End of the task description
+
+Used data set \cite{dataset}.
+
+\section{Methods}
+\subsection{Data analysis}
+# Task description
+- Data characteristics
+Data size, number of cases and features, types of features, information about missing values, information on unusual values (e.g. non-standard coding of missing values, etc.)
+
+* Descriptive analysis and data visualization
+** Objective
+*** Basic properties of variables / features (range, properties, distribution)
+*** Identification of missing values and outliers
+*** Analysis of correlation of features
+*** Initial assessment of discriminative ability of consecutive features (i.e. ability to separate objects from different classes)
+# End of the task description
+
+```{r}
+analysis_introduce <- DataExplorer::introduce(df)
+analysis_introduce
+
+analysis_missing <- DataExplorer::profile_missing(df)
+analysis_missing
+```
+
+
+Input variables \ref{table:1}. There is `r analysis_introduce$rows` rows. 
+ <!-- TODO: Use analysis_introduce -->
+There is only one column with a big amout of missing values. We delete it.
+<!-- TODO: Use analysis_missing -->
+
+\begin{table}[]
+  \begin{center}
+    \begin{tabular}{|l|l|l|}
+      \hline
+      Variable name & Type & Description \\
+      \hline
+      \multicolumn{3}{|c|}{Bank client data} \\
+      \hline
+      Age & Numeric & Age of client  \\
+      Job & Categorical & Type of job\\
+      Marital & Categorical & Marital status of client \\
+      Education & Categorical & Education status of client \\
+      Default & Categorical & Has credit in default? \\
+      Housing & Categorical & Has housing loan? \\
+      Loan & Categorical & Has personal loan? \\
+      \hline
+      \multicolumn{3}{|c|}{Variables related with the last contact of the current campaign} \\
+      \hline
+      Contact & Categorical & Contact communication type \\
+      Month & Categorical & Last contact month of year \\
+      Day of week & Categorical & Last contact day of the week \\
+      Duration & Numeric & Last contact duration, in seconds \\
+      \hline
+      \multicolumn{3}{|c|}{Other attributes} \\
+      \hline
+      Campaign & Categorical & Number of contacts performed during this campaign \\
+      Pdays & Numeric & Number of days that passed by after the client was last \\
+       & & contacted from a previous campaign \\
+      Previous & Numeric & Nnumber of contacts performed before this campaign \\
+      Poutcome & Categorical & Outcome of the previous marketing campaign \\
+      \hline
+      \multicolumn{3}{|c|}{Social and economic context attributes} \\
+      \hline
+      Emp.var.rate & Numeric & Employment variation rate - quarterly indicator \\
+      Cons.price.idx & Numeric & Consumer price index - monthly indicator \\
+      Cons.conf.idx & Numeric & Consumer confidence index - monthly indicator \\
+      Euribor3m & Numeric & Euribor 3 month rate - daily indicator \\
+      Nr. employed & Numeric & Number of employees - quarterly indicator \\
+      \hline
+      \multicolumn{3}{|c|}{Outcome variable} \\
+      \hline
+      y & Categorical & Has the client subscribed a term deposit? \\
+      \hline
+    \end{tabular}
+  \end{center}
+  \caption{Input variables}
+  \label{table:1}
+\end{table}
+
+Unusual values and notes from dataset description.
+
+Duration - Important note:  this attribute highly affects the output target (e.g., if duration=0 then y="no"). Yet, the duration is not known before a call is performed. Also, after the end of the call y is obviously known. Thus, this input should only be included for benchmark purposes and should be discarded if the intention is to have a realistic predictive model.
+
+Pdays - 999 means client was not previously contacted
+
+
+```{r}
+df <- df %>% dplyr::select(df, -nr.employed)
+
+# Univariate analysis
+DataExplorer::plot_bar(df)
+DataExplorer::plot_histogram(df, nrow = 3, ncol = 3)
+
+# Data transformation
+# Missing / unknown values handling
 ```
 
 ```{r}
+# Predictive power analysis / Multivariate analysis
+DataExplorer::plot_boxplot(df, by = 'y', nrow = 3, ncol = 3) # Continous values
+# ... Categorical values
+```
+
+```{r}
+# Correlation analysis
+DataExplorer::plot_correlation(df, type = "continuous")
+```
+
+
+\subsection{Classification}
+# Task description
+When, where, and how was the study done? What materials were used or who was included in the study groups (patients, etc.)
+
+- Methods and algorithms used in the project
+What methods / algorithms have been used? Which tasks these methods / algorithms were used for? (e.g. preliminary analysis and visualization, classifiaction, prediction, cluster analysis, etc.)
+
+* Classification
+** Objective - classification rule
+** Methods: LDA, QDA, KNN, other
+** Assessment of accuracy: Holdout / Cross Validation
+# End of the task description
+
+```{r, eval=FALSE}
+# Data transformations
+DataExplorer::dummify
+df <- df %>% dplyr::select(age, duration, y)
+
 # Experiment design
 tasks = list(
   TaskClassif$new(id = "full", backend = df, target = 'y')
@@ -73,17 +184,32 @@ learners = lapply(learners, lrn, predict_type = "prob", predict_sets = c("train"
 
 resamplings = rsmp("cv", folds = 3)
 design = benchmark_grid(tasks, learners, resamplings)
-```
 
-```{r}
-# Training
 bmr = benchmark(design)
 ```
 
+\section{Results}
+# Task description
+What answer was found to the research question; what did the study find? Was the tested hypothesis true?
 
-```{r}
+Results presented in the form of corresponding tables, graphs and diagrams. Note that only the most important results should be included in the report, whereas additional results can be added as attachments.
+
+
+** Mehtods
+*** Summary statistics
+*** Plots
+# End of the task description
+
+
+```{r, eval=FALSE}
 # Results
 measures = list(
+  msr("classif.acc", id = "accuracy_train", predict_sets = "train"),
+  msr("classif.acc", id = "accuracy_test"),
+  msr("classif.precision", id = "precision_train", predict_sets = "train"),
+  msr("classif.precision", id = "precision_test"),
+  msr("classif.recall", id = "recall_train", predict_sets = "train"),
+  msr("classif.recall", id = "recall_test"),
   msr("classif.auc", id = "auc_train", predict_sets = "train"),
   msr("classif.auc", id = "auc_test")
 )
@@ -91,3 +217,16 @@ measures = list(
 bmr$aggregate(measures)
 ```
 
+\section{Discussion}
+# Task description
+What might the answer imply and why does it matter? How does it fit in with what other researchers have found? What are the perspectives for future research?
+
+- Conclusions
+Precise conclusions: what can be concluded from the analyses carried out? How these conclusions could be put into practice? (e.g. development of a new / better strategy in the company, new / better diagnostic methods, etc.)
+
+- Further research suggestions
+Short information on further possible directions of research (what could / should be further studied and what additional methods / algorithms could be used?)
+# End of the task description
+
+\bibliographystyle{unsrt}
+\bibliography{references}
