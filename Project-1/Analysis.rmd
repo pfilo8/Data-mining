@@ -20,10 +20,16 @@ knitr::opts_chunk$set(fig.align='center', message=F, warning=F)
 ```
 
 ```{r}
+# LaTeX packages
+library(xtable)
+
+options(xtable.comment = FALSE)
+
 library(DataExplorer)
 library(tidyverse)
 library(mlr3)
 library(mlr3learners)
+library(mlr3pipelines)
 
 library(kknn)
 library(MASS)
@@ -34,42 +40,35 @@ df[, 'y'] <- as.factor(df$y)
 
 \section{Introduction}
 
-# Task descripion
-Why was the study undertaken? What was the research question, the tested hypothesis or the purpose of the research?
+In this report we will be analysing the data \cite{dataset} related to direct marketing campaigns of a Portuguese banking institution. The marketing campaigns were based on phone calls. Often, more than one contact to the same client was required, in order to access if the product (bank term deposit) would be ('yes') or not ('no') subscribed. 
 
-- Problem description and research question formulation
-Short information on the specicity of the problem considered. What questions do we want to answer analysing the data? What potential benefits may result from the analysis? For example, the benefit could be: a better diagnostic method, better efficiency in detecting bad/goo d customers applying for a loan, separating groups of customers who can be targeted witha special offer, identifying relevant features/variables, etc.
-# End of the task description
+This specific problem is extremly important for call centers to manage their limited human resoruces. In order to make such a campaign succesful we have to point out people who are most likely to subscribe bank term deposit.
 
-Used data set \cite{dataset}.
+Our goal of this project is to conduct data analysis to better understand available data for modeling and then create classifier which will be correctly assigning classes.
+
+<!-- # Task descripion -->
+<!-- Why was the study undertaken? What was the research question, the tested hypothesis or the purpose of the research? -->
+
+<!-- - Problem description and research question formulation -->
+<!-- Short information on the specicity of the problem considered. What questions do we want to answer analysing the data? What potential benefits may result from the analysis? For example, the benefit could be: a better diagnostic method, better efficiency in detecting bad/goo d customers applying for a loan, separating groups of customers who can be targeted witha special offer, identifying relevant features/variables, etc. -->
+<!-- # End of the task description -->
+
+Structer of this document is as follows. In Section 2 we will describe methods used to perform whole modeling process. In the next section we will analyse our results and sum up whole project in the last section.
 
 \section{Methods}
-\subsection{Data analysis}
-# Task description
-- Data characteristics
-Data size, number of cases and features, types of features, information about missing values, information on unusual values (e.g. non-standard coding of missing values, etc.)
+\label{sec:methods}
+This section is divided to 3 parts - data description, data analysis, classification.
 
-* Descriptive analysis and data visualization
-** Objective
-*** Basic properties of variables / features (range, properties, distribution)
-*** Identification of missing values and outliers
-*** Analysis of correlation of features
-*** Initial assessment of discriminative ability of consecutive features (i.e. ability to separate objects from different classes)
-# End of the task description
+In first subsection we will describe dataset from official documentation which will give us general overview about dataset and information about variables meaning and types. Also we might there spot some interesting facts which could be interesting for us from modeling perspective, i.e. variable coding or they might give us real-world application context. 
 
-```{r}
-analysis_introduce <- DataExplorer::introduce(df)
-analysis_introduce
+Then in the next subsection we will conduct statistical analysis of given dataset. After this part we would like to know basic properties of variables / features (range, properties, distribution), find all missing values and outliers, be familiar with correlations between features in the dataset and give initial assessment of discriminative ability of consecutive features (i.e. ability to separate objects from different classes).
 
-analysis_missing <- DataExplorer::profile_missing(df)
-analysis_missing
-```
+In the last subsection we will describe our approach to the modeling task. We will define our objective, describe when, where, and how was the study done, what materials were used and who was included in the study groups. Also we will describe methods and algorithms used in the project.
 
+\subsection{Data description}
+Telemarketing is one of the forms used to encourage clients to buy new bank's product. If we imagine real-world scenario it may be very hard to decide to which customer we should call in order to achive our goal (in this case bank term deposit subscription) because it's not possible to call them all as we have limited human resources of telemarketers. Such in this case we could use historical data about calls done in previous marketing campaigns to formulate conclusions about what type of clients are our target group and what part of the day / week / year is a good time for such a projects. Moreover after that we can create classification models which will learn to give us good recomendations which clients we should call in the first order.
 
-Input variables \ref{table:1}. There is `r analysis_introduce$rows` rows. 
- <!-- TODO: Use analysis_introduce -->
-There is only one column with a big amout of missing values. We delete it.
-<!-- TODO: Use analysis_missing -->
+In general our dataset can be splitted in five categories: bank client data, last contact of the current campaign, other attributes, social and economic context, outcome as we can observer in Table \ref{table:1}. First category describes general information about client - age, job, etc. Second category describes how the last contact with client was performed. There is also important note that Duration attribute highly affects the output target (e.g., if duration=0 then y="no"). Yet, the duration is not known before a call is performed. Also, after the end of the call y is obviously known. Thus, this input should only be included for benchmark purposes and we will discard it because our intention is to have a realistic predictive model. Third category in general tell us about previous campaigns and previous contacts with given person. There is also a note from dataset authors that Pdays equal 999 means client was not previously contacted. We will also note that in our data. Fourth category is about social and economic context attributes such as employment rate. This might give us information how was economy in this time and might be driving factor for some people. The last category is our outcome variable, i.e. flag if the client subsribed a term deposit.
 
 \begin{table}[]
   \begin{center}
@@ -99,7 +98,7 @@ There is only one column with a big amout of missing values. We delete it.
       Campaign & Categorical & Number of contacts performed during this campaign \\
       Pdays & Numeric & Number of days that passed by after the client was last \\
        & & contacted from a previous campaign \\
-      Previous & Numeric & Nnumber of contacts performed before this campaign \\
+      Previous & Numeric & Number of contacts performed before this campaign \\
       Poutcome & Categorical & Outcome of the previous marketing campaign \\
       \hline
       \multicolumn{3}{|c|}{Social and economic context attributes} \\
@@ -116,19 +115,46 @@ There is only one column with a big amout of missing values. We delete it.
       \hline
     \end{tabular}
   \end{center}
-  \caption{Input variables}
+  \caption{Input variables.}
   \label{table:1}
 \end{table}
 
-Unusual values and notes from dataset description.
+```{r}
+df <- df %>% mutate(
+  pdays = na_if(pdays, 999)
+)
+```
 
-Duration - Important note:  this attribute highly affects the output target (e.g., if duration=0 then y="no"). Yet, the duration is not known before a call is performed. Also, after the end of the call y is obviously known. Thus, this input should only be included for benchmark purposes and should be discarded if the intention is to have a realistic predictive model.
 
-Pdays - 999 means client was not previously contacted
+
+\subsection{Data analysis}
+\label{subsec:data-analysis}
+
+```{r results='asis', echo=FALSE}
+analysis_introduce <- DataExplorer::introduce(df)
+analysis_introduce_t <- as.data.frame(t(as.matrix(analysis_introduce)))
+colnames(analysis_introduce_t) <- c('Info')
+xtable(analysis_introduce_t,
+       caption = "Basic summary about dataset.",
+       label = "table:introduce")
+```
+
+```{r results="asis"}
+analysis_missing <- DataExplorer::profile_missing(df)
+xtable(analysis_missing,
+       caption = "Basic summary about missing values in dataset.",
+       label = "table:missing")
+```
+
+
+Input variables \ref{table:1}. There is `r analysis_introduce$rows` rows. 
+ <!-- TODO: Use analysis_introduce -->
+As we can observe in \ref{table:missing}. There is only one column with a big amout of missing values - nr.empolyed. It has about 81% of missing values. It's very big amount and we've decided to remove this column from our analysis.
+
 
 
 ```{r}
-df <- df %>% dplyr::select(df, -nr.employed)
+df <- df %>% dplyr::select(-nr.employed)
 
 # Univariate analysis
 DataExplorer::plot_bar(df)
@@ -151,6 +177,7 @@ DataExplorer::plot_correlation(df, type = "continuous")
 
 
 \subsection{Classification}
+\label{subsec:classification}
 # Task description
 When, where, and how was the study done? What materials were used or who was included in the study groups (patients, etc.)
 
@@ -165,7 +192,7 @@ What methods / algorithms have been used? Which tasks these methods / algorithms
 
 ```{r, eval=FALSE}
 # Data transformations
-DataExplorer::dummify
+# DataExplorer::dummify
 df <- df %>% dplyr::select(age, duration, y)
 
 # Experiment design
@@ -188,7 +215,17 @@ design = benchmark_grid(tasks, learners, resamplings)
 bmr = benchmark(design)
 ```
 
+\subsubsection{Linear Discriminant Analysis}
+
+\subsubsection{Quadratic Discriminant Analysis}
+
+\subsubsection{k-Nearest Neighbours}
+
+\subsubsection{Decision Tree}
+
 \section{Results}
+\label{sec:results}
+
 # Task description
 What answer was found to the research question; what did the study find? Was the tested hypothesis true?
 
@@ -218,6 +255,8 @@ bmr$aggregate(measures)
 ```
 
 \section{Discussion}
+\label{sec:discussion}
+
 # Task description
 What might the answer imply and why does it matter? How does it fit in with what other researchers have found? What are the perspectives for future research?
 
