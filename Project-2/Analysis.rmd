@@ -2,11 +2,8 @@
 title: "Report I"
 author: "Anna Szymanek (230042), Patryk Wielopolski (234891)"
 output:
-  pdf_document: default
-  word_document: default
-  html_document: default
-  toc: True
-  number_sections: True
+  pdf_document:
+    number_sections: True
 header-includes:
 - \usepackage{amsmath}
 - \usepackage{float}
@@ -19,35 +16,225 @@ knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_chunk$set(fig.align='center', message=F, warning=F) 
 ```
 
+```{r}
+# LaTeX packages
+library(knitr)
+library(xtable)
+
+options(xtable.comment = FALSE)
+
+# Data analysis
+library(tidyverse)
+
+# Plots
+library(ggplot2)
+library(patchwork)
+library(latex2exp)
+
+# Dimensionality reduction
+library(fastICA)
+library(NMF)
+
+COLOR_1 <- '#18729E'
+COLOR_2 <- '#EAC9A2'
+
+df <- read_csv2('data/bank-additional-full.csv')
+df[, 'y'] <- as.factor(df$y)
+
+df <- df %>% mutate(
+  pdays = na_if(pdays, 999)
+)
+```
+
+```{r}
+df_new_clients <- df %>% 
+  filter(is.na(pdays)) %>% 
+  filter(poutcome == 'nonexistent') %>% 
+  filter(previous == 0) %>% 
+  dplyr::select(-pdays, -poutcome, -previous, -duration, -nr.employed)
+
+df_new_clients <- df_new_clients %>% 
+  dplyr::select(-default)
+
+df_new_clients <- df_new_clients %>% 
+  filter(marital != 'unknown')
+
+df_new_clients <- df_new_clients %>% 
+  mutate(education = case_when(
+    str_detect(education, 'basic') ~ 'basic',
+    str_detect(education, 'illiterate') ~ 'unknown',
+    TRUE ~ education
+  ))
+
+df_new_clients <- df_new_clients %>% 
+  filter(housing != 'unknown') %>% 
+  mutate(housing = if_else(housing == 'yes', 1, 0))
+
+df_new_clients <- df_new_clients %>% 
+  mutate(loan = if_else(loan == 'yes', 1, 0))
+
+df_new_clients <- df_new_clients %>% 
+  mutate(contact_cellular = if_else(contact == 'cellular', 1, 0)) %>% 
+  dplyr::select(-contact)
+
+df_new_clients <- df_new_clients %>% 
+  dplyr::select(-month)
+
+df_new_clients <- df_new_clients %>% 
+  dplyr::select(-day_of_week)
+
+View(df_new_clients)
+```
+
 \section{Introduction}
 
-Why was the study undertaken? What was the research question, the tested hypothesis or the purpose of the research?
-
-- Problem description and research question formulation
-Short information on the specicity of the problem considered. What questions do we want to answer analysing the data? What potential benefits may result from the analysis? For example, the benefit could be: a better diagnostic method, better efficiency in detecting bad/goo d customers applying for a loan, separating groups of customers who can be targeted witha special offer, identifying relevant features/variables, etc.
-
-- Data characteristics
-Data size, number of cases and features, types of features, information about missing values, information on unusual values (e.g. non-standard coding of missing values, etc.)
+Cluster analysis with quality assessment
+Application of the selected dimension reduction method in connection with classification and cluster analysis
 
 \section{Methods}
+\label{sec:methods}
 
-When, where, and how was the study done? What materials were used or who was included in the study groups (patients, etc.)
+\subsection{Data description}
+Telemarketing is one of the forms used to encourage clients to buy new bank's product. If we imagine real-world scenario it may be very hard to decide to which customer we should call in order to achive our goal (in this case bank term deposit subscription) because it's not possible to call them all as we have limited human resources of telemarketers. Such in this case we could use historical data about calls done in previous marketing campaigns to formulate conclusions about what type of clients are our target group and what part of the day / week / year is a good time for such a projects. Moreover after that we can create classification models which will learn to give us good recomendations which clients we should call in the first order.
 
-- Methods and algorithms used in the project
-What methods / algorithms have been used? Which tasks these methods / algorithms were used for? (e.g. preliminary analysis and visualization, classifiaction, prediction, cluster analysis, etc.)
+In general our dataset can be splitted in five categories: bank client data, last contact of the current campaign, other attributes, social and economic context, outcome as we can observer in Table \ref{table:1}. First category describes general information about client - age, job, etc. Second category describes how the last contact with client was performed. There is also important note that Duration attribute highly affects the output target (e.g., if duration=0 then y="no"). Yet, the duration is not known before a call is performed. Also, after the end of the call y is obviously known. Thus, this input should only be included for benchmark purposes and we will discard it because our intention is to have a realistic predictive model. Third category in general tell us about previous campaigns and previous contacts with given person. There is also a note from dataset authors that Pdays equal 999 means client was not previously contacted. We will also note that in our data. Fourth category is about social and economic context attributes such as employment rate. This might give us information how was economy in this time and might be driving factor for some people. The last category is our outcome variable, i.e. flag if the client subsribed a term deposit.
 
-\section{Results}
+\begin{table}[]
+  \begin{center}
+    \begin{tabular}{|l|l|l|}
+      \hline
+      Variable name & Type & Description \\
+      \hline
+      \multicolumn{3}{|c|}{Bank client data} \\
+      \hline
+      Age & Numeric & Age of client  \\
+      Job & Categorical & Type of job\\
+      Marital & Categorical & Marital status of client \\
+      Education & Categorical & Education status of client \\
+      Default & Categorical & Has credit in default? \\
+      Housing & Categorical & Has housing loan? \\
+      Loan & Categorical & Has personal loan? \\
+      \hline
+      \multicolumn{3}{|c|}{Variables related with the last contact of the current campaign} \\
+      \hline
+      Contact & Categorical & Contact communication type \\
+      Month & Categorical & Last contact month of year \\
+      Day of week & Categorical & Last contact day of the week \\
+      Duration & Numeric & Last contact duration, in seconds \\
+      \hline
+      \multicolumn{3}{|c|}{Other attributes} \\
+      \hline
+      Campaign & Numeric & Number of contacts performed during this campaign \\
+      Pdays & Numeric & Number of days that passed by after the client was last \\
+       & & contacted from a previous campaign \\
+      Previous & Numeric & Number of contacts performed before this campaign \\
+      Poutcome & Categorical & Outcome of the previous marketing campaign \\
+      \hline
+      \multicolumn{3}{|c|}{Social and economic context attributes} \\
+      \hline
+      Emp.var.rate & Numeric & Employment variation rate - quarterly indicator \\
+      Cons.price.idx & Numeric & Consumer price index - monthly indicator \\
+      Cons.conf.idx & Numeric & Consumer confidence index - monthly indicator \\
+      Euribor3m & Numeric & Euribor 3 month rate - daily indicator \\
+      Nr. employed & Numeric & Number of employees - quarterly indicator \\
+      \hline
+      \multicolumn{3}{|c|}{Outcome variable} \\
+      \hline
+      y & Categorical & Has the client subscribed a term deposit? \\
+      \hline
+    \end{tabular}
+  \end{center}
+  \caption{Input variables.}
+  \label{table:1}
+\end{table}
 
-What answer was found to the research question; what did the study find? Was the tested hypothesis true?
+\subsection{Data analysis}
+\label{subsec:data-analysis}
 
-Results presented in the form of corresponding tables, graphs and diagrams. Note that only the most important results should be included in the report, whereas additional results can be added as attachments.
+\subsection{Dimension reduction}
+Objective: feature extraction / visualization
+Methods: 
+ - PCA
+ - MDS
+ - ICA
+ - NMF
+ 
+ \subsubsection{Principal components analysis}
+ 
+```{r}
+results_pca <- df_new_clients %>% 
+  dplyr::select(-y) %>% 
+  dplyr::select(age, job, marital, education, housing, loan) %>% 
+  DataExplorer::dummify() %>% 
+  prcomp(scale. = TRUE, center = TRUE)
 
-\section{Discussion}
+results_pca_df <- data.frame(results_pca$x)
+results_pca_df['y'] <- df_new_clients['y']
+results_pca_df %>% 
+  ggplot(aes(x = PC1, y = PC2, color = y)) +
+  geom_point(size = 1)
+```
 
-What might the answer imply and why does it matter? How does it fit in with what other researchers have found? What are the perspectives for future research?
+\subsubsection{Multidimensional scalling}
 
-- Conclusions
-Precise conclusions: what can be concluded from the analyses carried out? How these conclusions could be put into practice? (e.g. development of a new / better strategy in the company, new / better diagnostic methods, etc.)
+Not possible to calculate ...
 
-- Further research suggestions
-Short information on further possible directions of research (what could / should be further studied and what additional methods / algorithms could be used?)
+\subsubsection{FastICA}
+```{r}
+results_ica <- df_new_clients %>% 
+  dplyr::select(-y) %>% 
+  dplyr::select(age, job, marital, education, housing, loan) %>% 
+  DataExplorer::dummify() %>% 
+  scale() %>% 
+  fastICA(n.comp = 2)
+```
+```{r}
+results_ica_s <- data.frame(results_ica$S)
+results_ica_s['y'] <- df_new_clients['y']
+
+ggplot(results_ica_s, aes(x = X1, y = X2, color = y)) + 
+  geom_point(size = 1)
+```
+Same as PCA
+
+\subsubsection{Non-negative matrix factorization}
+
+```{r}
+results_nmf <- df_new_clients %>% 
+  dplyr::select(-y) %>% 
+  dplyr::select(age, job, marital, education, housing, loan) %>% 
+  DataExplorer::dummify() %>% 
+  DataExplorer::dummify() %>% 
+  nmf(rank = 2)
+
+results_nmf_H <- results_nmf@fit@H
+results_nmf_W <- data.frame(results_nmf@fit@W)
+results_nmf_W['y'] <- df_new_clients['y']
+
+ggplot(results_nmf_W, aes(x = X1, y = X2, color = y)) +
+  geom_point()
+```
+Explore more...
+
+\subsection{Classification}
+Similar to the 1. project
+
+\subsection{Clustering}
+Objective: group objects according to their similarity
+Methods: 
+ - k-means
+ - PAM
+ - AGNES
+ - Other (HDBSCAN?)
+Quality assessment of cluster analysis results:
+ - Average silhouette vs different K
+ - Separation / Compactness / Other ideas
+ 
+
+
+\section{Results and discussion}
+\label{sec:results}
+
+
+\bibliographystyle{unsrt}
+\bibliography{references}

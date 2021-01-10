@@ -1,0 +1,13 @@
+install.packages(c(
+  'xtable',
+  'DataExplorer',
+  'tidyverse',
+  'ggplot2',
+  'patchwork',
+  'latex2exp',
+  'mlr3',
+  'mlr3learners',
+  'mlr3pipelines',
+  'kknn',
+  'ranger'
+))

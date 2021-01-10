@@ -21,18 +21,31 @@ knitr::opts_chunk$set(fig.align='center', message=F, warning=F)
 
 ```{r}
 # LaTeX packages
+library(knitr)
 library(xtable)
 
 options(xtable.comment = FALSE)
 
+# Data analysis
 library(DataExplorer)
 library(tidyverse)
+
+# Plots
+library(ggplot2)
+library(patchwork)
+library(latex2exp)
+
+COLOR_1 <- '#18729E'
+COLOR_2 <- '#EAC9A2'
+
+# Models
 library(mlr3)
 library(mlr3learners)
 library(mlr3pipelines)
 
 library(kknn)
 library(MASS)
+library(ranger)
 
 df <- read_csv2('data/bank-additional-full.csv')
 df[, 'y'] <- as.factor(df$y)
@@ -53,7 +66,7 @@ Our goal of this project is to conduct data analysis to better understand availa
 <!-- Short information on the specicity of the problem considered. What questions do we want to answer analysing the data? What potential benefits may result from the analysis? For example, the benefit could be: a better diagnostic method, better efficiency in detecting bad/goo d customers applying for a loan, separating groups of customers who can be targeted witha special offer, identifying relevant features/variables, etc. -->
 <!-- # End of the task description -->
 
-Structer of this document is as follows. In Section 2 we will describe methods used to perform whole modeling process. In the next section we will analyse our results and sum up whole project in the last section.
+Structer of this document is as follows. In Section 2 we will describe methods used to perform whole modeling process. In the next section we will analyse our results and sum up whole project.
 
 \section{Methods}
 \label{sec:methods}
@@ -95,7 +108,7 @@ In general our dataset can be splitted in five categories: bank client data, las
       \hline
       \multicolumn{3}{|c|}{Other attributes} \\
       \hline
-      Campaign & Categorical & Number of contacts performed during this campaign \\
+      Campaign & Numeric & Number of contacts performed during this campaign \\
       Pdays & Numeric & Number of days that passed by after the client was last \\
        & & contacted from a previous campaign \\
       Previous & Numeric & Number of contacts performed before this campaign \\
@@ -125,8 +138,6 @@ df <- df %>% mutate(
 )
 ```
 
-
-
 \subsection{Data analysis}
 \label{subsec:data-analysis}
 
@@ -139,6 +150,8 @@ xtable(analysis_introduce_t,
        label = "table:introduce")
 ```
 
+We will begin our data analysis with some important numbers about our dataset. As we can observe in Table \ref{table:introduce} we have `r analysis_introduce$rows` rows and `r analysis_introduce$columns` with `r analysis_introduce$discrete_columns` discrete columns and `r analysis_introduce$continuous_columns` continuous columns which agrees with data description. Luckily, we don't have all missing columns.
+
 ```{r results="asis"}
 analysis_missing <- DataExplorer::profile_missing(df)
 xtable(analysis_missing,
@@ -146,100 +159,288 @@ xtable(analysis_missing,
        label = "table:missing")
 ```
 
+Now, let's take a closer look into missing values. It's very important because most of the classification algorithms doesn't support missing values and in case of such variables we should somehow deal with them. Based on our results from Table \ref{table:missing} we can observe that we have only `r analysis_missing %>% filter(num_missing > 0)  %>% dplyr::select(feature) %>% pull() %>% length()` columns which has any missing value - `r analysis_missing %>% filter(num_missing > 0)  %>% dplyr::select(feature) %>% pull()`.
 
-Input variables \ref{table:1}. There is `r analysis_introduce$rows` rows. 
- <!-- TODO: Use analysis_introduce -->
-As we can observe in \ref{table:missing}. There is only one column with a big amout of missing values - nr.empolyed. It has about 81% of missing values. It's very big amount and we've decided to remove this column from our analysis.
-
-
-
-```{r}
-df <- df %>% dplyr::select(-nr.employed)
-
-# Univariate analysis
-DataExplorer::plot_bar(df)
-DataExplorer::plot_histogram(df, nrow = 3, ncol = 3)
-
-# Data transformation
-# Missing / unknown values handling
+```{r results='asis'}
+xtable(df %>% mutate(nr.employed = replace_na(nr.employed, 0)) %>% count(nr.employed, y),
+       caption = "Analysis of missing values of nr.employed",
+       label = "table:nr.employed")
 ```
 
+Let's begin with the second one - \textit{nr.employed}. We can see that almost 81% of values are missing. In Table \ref{table:nr.employed} we can observe that we have only missing value and value 5191 and there is no special difference between frequencies in class of \textit{y} variable. Probably that may be an error during data completion. Because of that observations we want to exclude that variable from further analysis.
+
+```{r results='asis'}
+xtable(df %>% mutate(pdays = is.na(pdays)) %>% count(pdays, y),
+       caption = "Analysis of missing values of pdays",
+       label = "table:pdays")
+```
+
+Let's go back to the first variable - \textit{pdays}. It's more interesting because that was us who made that number of missing values, in particular 96% of all records. As we remember missing values was assigned to clients who has never been called by telemarketers. If we look into Table \ref{table:pdays} it turns out that more than half of the customers bought the product. So in our context it would be more convinient to analyse client who was never reached by telemarketers in the previous campaigns. In order to that we will select only that subset of clients and drop that column.
+
+\begin{figure}
+```{r fig.width=8, fig.height=3}
+plot_nan_poutcome <- df %>% 
+  filter(is.na(pdays)) %>% 
+  ggplot(aes(x = poutcome)) + 
+  geom_bar(fill = COLOR_1) +
+  xlab(TeX('Count')) +
+  ylab(TeX('Poutcome')) +
+  theme_minimal()
+
+plot_nan_previous <- df %>% 
+  filter(is.na(pdays)) %>% 
+  ggplot(aes(x = previous)) + 
+  geom_bar(fill = COLOR_1) +
+  xlab(TeX('Count')) +
+  ylab(TeX('Previous')) +
+  theme_minimal()
+
+plot_nan_poutcome + plot_nan_previous
+```
+\caption{Analysis of linked variables to \textit{pdays} - \textit{poutcome}, \textit{previous}.}
+\label{fig:poutcome-previous}
+\end{figure}
+
+But the column \textit{pdays} is strictly connected to other two columns: \textit{previous} and \textit{poutcome}. They should probably also be droped because if there was no contact before there should be values indicating no contact. As we could see on Figure \ref{fig:poutcome-previous} that's not the case in our situation. We have some group of people who were contacted before, even more than one time, but it was a failure. We want to follow the set goal, i.e. only analyse first-contacted in this campaign people, so we will filter out these observations and drop these two columns.
+
+Also before we will go the visualization part we want to mention column \textit{Duration} which was stated that it's not known before contact so we also want to exclude it from further analysis.
+
 ```{r}
+df_new_clients <- df %>% 
+  filter(is.na(pdays)) %>% 
+  filter(poutcome == 'nonexistent') %>% 
+  filter(previous == 0) %>% 
+  dplyr::select(-pdays, -poutcome, -previous, -duration, -nr.employed)
+```
+
+After this transformations our dataset has `r nrow(df_new_clients)` rows and `r ncol(df_new_clients)` columns. Moreover our modeling goal is more specified and now we want to predict which new clients who we never called before in the previous campaigns we want to target.
+
+\begin{figure}
+```{r fig.width=8, fig.height=3}
+df_new_clients %>% 
+  ggplot(aes(x = y)) +
+  geom_bar(fill = COLOR_1) +
+  xlab(TeX('Count')) +
+  ylab(TeX('y')) +
+  theme_minimal()
+```
+\caption{Analysis of target variable.}
+\label{fig:y}
+\end{figure}
+
+Now, we will conduct univariate analysis of the dataset. Let's begin with our target value \textit{y}. As we can observe on Figure \ref{fig:y} we have higly imbalanced data which may cause problems during modeling part but we will take care of that in next section of the project.
+
+\begin{figure}
+```{r fig.width=8, fig.height=6}
+DataExplorer::plot_bar(df_new_clients %>% dplyr::select(-y), ggtheme = theme_minimal())
+```
+\caption{Analysis of categorical variables.}
+\label{fig:categorical}
+\end{figure}
+
+```{r results='asis'}
+xtable(df_new_clients %>% filter(loan == 'unknown') %>% count(loan, default, housing),
+       caption = "Analysis of unknown values in load, default, housing.",
+       label = "table:unknown")
+```
+
+
+At the Figure \ref{fig:categorical} we've plotted all categorical variables in our dataset. At the first subplot we have \textit{job} variable. Most of the jobs are connected to administration - \textit{admin} and \textit{blue-collar}, which covers most of the all jobs. The least frequent category is \textit{unknown}. On the next plot we can see that most of the clients are \textit{married} and only about a few of them we don't know what is client marital status. Moreover majority of the clients have accomplished \textit{high school} or \textit{university degree}. What's interesting we have a some observations with illiteracy. Most of the people have never \textit{default} or we don't know about that. Only 2 examples had ever \textit{default} and it would be probably good to exclude that variable because it cannot properly say anything about client - because answer is \textit{no} or \textit{we don't know}. Approximately half of the people have own house and second half does not. About a small portion of clients we don't know. Moreover most of the clients doesn't have a \textit{loan}. What's interesting and we can observe in Table \ref{table:unknown} that it's a case that we don't known more than one information about client's \textit{loan}, \textit{default} and \textit{housing}. It may be caused by data collection process. \textit{Contact} was mostly performed by \textit{cellular}. By looking at the \textit{month} of the call we can guess that most of the data was collected between \textit{April} and \textit{August} especially the most intensive month was \textit{May}. \textit{Day of the week} was uniformly distributed and calls was only performed during work days. By intuition month and day of the week will probably won't have any particular predictive power because it's random situation when we will call particular client. However it may be a case when we take into account socio-economic variables. Similar argumentation may be applied to the \textit{contact} variable.
+
+```{r}
+df_new_clients <- df_new_clients %>% 
+  dplyr::select(-default)
+```
+
+
+\begin{figure}
+```{r fig.width=8, fig.height=4}
+DataExplorer::plot_histogram(df_new_clients, nrow = 3, ncol = 3, ggtheme = theme_minimal())
+```
+\caption{Analysis of continuous variables.}
+\label{fig:continuous}
+\end{figure}
+
+Now, let's take a closer look at continuous variables. We've plotted histograms on Figure \ref{fig:continuous}. We can observe that most of the clients are young adults which is understandable because they may have in this age some saving which may be worth to invest. \textit{Campaign} variable looks very similar to the exponential distribution which is quite natural for a such variable. \textit{Consumer confidence index} provides an indication of future developments of households’ consumption and saving, based upon answers regarding their expected financial situation, their sentiment about the general economic situation, unemployment and capability of savings. Negative values for this variable are not a good indicator for our goal to encourage people to save money in bank term deposits. \textit{Consumer price index} is a measure that examines the weighted average of prices of a basket of consumer goods and services, such as transportation, food, and medical care compared to the base year. High positive values are a bad indicator for us because people probably will have less money to invest and could be less willing to subscribe a bank term deposit. \textit{Employment variation rate} is essentially the variation of how many people are being hired or fired due to the shifts in the conditions of the economy. When the economy is in a recession or depression, people should be more conservative with their money and how the spend it because their financial future is less clear due to cyclical unemployment. When the economy is at its peak, individuals can be more open to risky investments because their employment options are greater. Both positive and negative values may potentialy mean good predictive power of this variable. The last variable - \textit{3 month Euribor interest rate} is the interest rate at which a selection of European banks lend one another funds denominated in euros whereby the loans have a maturity of 3 months. We may suspect that very high values such as 5000 may indicate wrong scale of the variable which should be around 1-5% in this case. High values of Euribor may be also a good indicator for subscribing a term deposit.
+
+\begin{figure}
+```{r fig.width=8, fig.height=5}
 # Predictive power analysis / Multivariate analysis
-DataExplorer::plot_boxplot(df, by = 'y', nrow = 3, ncol = 3) # Continous values
+DataExplorer::plot_boxplot(df_new_clients, by = 'y', nrow = 3, ncol = 3, ggtheme = theme_minimal()) # Continous values
 # ... Categorical values
 ```
+\caption{Analysis of continuous variables in context of target variable.}
+\label{fig:continuous-multi}
+\end{figure}
+
+After univariate analysis there is a time for multivariate analysis. We will analyse continuous variables in context of target variable. The results can be found on Figure \ref{fig:continuous-multi}. In the \textit{age} variable it's hard to distinguish between target category what values of age can determine subscription. More interesting is next chart with \textit{campaign} variable where we can observe that calling someone more than 20 times won't end up with success. The next variables connected to socio-economic factors have very different distributions except \textit{Consumer price index} and may be a very good features for a predictive model.
+
+\begin{figure}
+```{r fig.width=8, fig.height=4}
+# Correlation analysis
+DataExplorer::plot_correlation(df_new_clients, type = "continuous", ggtheme = theme_minimal())
+```
+\caption{Analysis of correlations.}
+\label{fig:correlation}
+\end{figure}
+
+The next step in our data understanding process will be correlation analysis. As we can observe on Figure \ref{fig:correlation} there are two set of variables which are highly correlated - \textit{emp.var.rate} with \textit{euribor3m} and \textit{cons.conf.idx} with \textit{cons.price.idx}, which is quite understandable because these are socio-economic indices which often are based on similar variables. We will have that in mind and if necessary exclude one of the variables from pairs.
 
 ```{r}
-# Correlation analysis
-DataExplorer::plot_correlation(df, type = "continuous")
+plot_grouped_bar_chart <- function(dataframe, group_variable, target_variable){
+  group_variable <- enquo(group_variable)
+  target_variable <- enquo(target_variable)
+  
+  dataframe %>%
+    group_by(!!group_variable, !!target_variable) %>%
+    summarise(counts = n()) %>% 
+    ggplot(aes(y = !!group_variable, x = counts)) +
+    geom_bar(
+      aes(color = !!target_variable, fill = !!target_variable),
+      stat = "identity", position = position_dodge(0.8),
+      width = 0.7
+      ) +
+    scale_color_manual(values = c(COLOR_1, COLOR_2)) +
+    scale_fill_manual(values = c(COLOR_1, COLOR_2)) +
+    geom_text(
+      aes(label = counts, group = !!target_variable), 
+      position = position_dodge(0.8),
+      hjust = -0.3, size = 3.5
+    )
+}
 ```
 
+\begin{figure}
+```{r fig.width=8, fig.height=4}
+plot_grouped_bar_chart(df_new_clients, job, y)
+```
+\caption{Analysis of \textit{job} variable in the context of target variable.}
+\label{fig:multi-job}
+\end{figure}
+
+We also conducted multiavariate analysis for categorical variables. Let's begin with \textit{job} variable on the Figure \ref{fig:multi-job}. We can see that proportions between groups are different, especially interesting are \textit{students} which have quite big percent of subscribed bank term deposits. It could be very useful variable for our model.
+
+\begin{figure}
+```{r fig.width=8, fig.height=4}
+plot_grouped_bar_chart(df_new_clients, marital, y)
+```
+\caption{Analysis of \textit{marital} variable in the context of target variable.}
+\label{fig:multi-marital}
+\end{figure}
+
+Marital status has 4 different categories as we previously see in the analysis. As we can see on Figure \ref{fig:multi-marital} they also have similar proportions between classes but we can see that \textit{unknown} category has low number of observations which could be potentialy improved during data collection process. We would like to remove these observations that have unknown marital status.
+
+```{r}
+df_new_clients <- df_new_clients %>% 
+  filter(marital != 'unknown')
+```
+
+
+\begin{figure}
+```{r fig.width=8, fig.height=4}
+plot_grouped_bar_chart(df_new_clients, education, y)
+```
+\caption{Analysis of \textit{education} variable in the context of target variable.}
+\label{fig:multi-education}
+\end{figure}
+
+The next plot is about \textit{education} variable on Figure \ref{fig:multi-education}. There is a lot of categories which will need to be encoded and we see that there is not a lot of differences between particular groups. We would like to try group \textit{basic} category into one and \textit{illiterate} with \textit{unknown} as they are semantically similar.
+
+```{r}
+df_new_clients <- df_new_clients %>% 
+  mutate(education = case_when(
+    str_detect(education, 'basic') ~ 'basic',
+    str_detect(education, 'illiterate') ~ 'unknown',
+    TRUE ~ education
+  ))
+```
+
+\begin{figure}
+```{r fig.width=8, fig.height=4}
+plot_grouped_bar_chart(df_new_clients, housing, y)
+```
+\caption{Analysis of \textit{housing} variable in the context of target variable.}
+\label{fig:multi-housing}
+\end{figure}
+
+\textit{Housing} is also variable which has a status \textit{unknown} and only 2 other categories. The results of grouping by target category can be found on Figure \ref{fig:multi-housing}. Similarily to marital, this status could be improved during data collection. Except that we can observe that housing have similar proportions. Moreover after reduction of unknown category we could encode housing as a binary variable.
+
+```{r}
+df_new_clients <- df_new_clients %>% 
+  filter(housing != 'unknown') %>% 
+  mutate(housing = if_else(housing == 'yes', 1, 0))
+```
+
+\begin{figure}
+```{r fig.width=8, fig.height=4}
+plot_grouped_bar_chart(df_new_clients, loan, y)
+```
+\caption{Analysis of \textit{loan} variable in the context of target variable.}
+\label{fig:multi-loan}
+\end{figure}
+
+On the next chart on Figure \ref{fig:multi-loan} we can observe \textit{loan} variable. After reduction of previous variables we can have only two states: \textit{yes} or \textit{no} so we can encode that variable as '0/1' flag. It's hard to say at this moment if this variable will have large impact on model but we can left it for now.
+
+```{r}
+df_new_clients <- df_new_clients %>% 
+  mutate(loan = if_else(loan == 'yes', 1, 0))
+```
+
+
+\begin{figure}
+```{r fig.width=8, fig.height=4}
+plot_grouped_bar_chart(df_new_clients, contact, y)
+```
+\caption{Analysis of \textit{contact} variable in the context of target variable.}
+\label{fig:multi-contact}
+\end{figure}
+
+Interesting plot is on Figure \ref{fig:multi-contact} which describes \textit{contact} variable. We can observe that contact made by \textit{cellular} is more likely to be successful. Because we have only two categories we can encode that variable as '0/1' flag.
+
+```{r}
+df_new_clients <- df_new_clients %>% 
+  mutate(contact_cellular = if_else(contact == 'cellular', 1, 0)) %>% 
+  dplyr::select(-contact)
+```
+
+
+\begin{figure}
+```{r fig.width=8, fig.height=4}
+plot_grouped_bar_chart(df_new_clients, month, y)
+```
+\caption{Analysis of \textit{month} variable in the context of target variable.}
+\label{fig:multi-month}
+\end{figure}
+
+Very interesting variable is \textit{month}. On Figure \ref{fig:multi-month} we can observe the results. It was very likely to make customer to get deposit on months:  \textit{March}, \textit{September}, \textit{October}, \textit{December} comparing to other months. It's worth to think a while about that feature from this disproportions come from. It may be a case that in May, June, July, August we have the largest number of calls and bank only wanted to collect as much data as possible and for example in following months there was used a predictive model which targeted clients in very accurate way. There is also other possibility. The last examples was targeted after a few other calls in this campaign and there was only negotiations between telemarketer and client which in very large number of cases ended up with success. However this variable shouldn't be used to predictive model because we would probably want to use it during whole year and we've got samples from whole period of that time.
+
+```{r}
+df_new_clients <- df_new_clients %>% 
+  dplyr::select(-month)
+```
+
+
+\begin{figure}
+```{r fig.width=8, fig.height=4}
+plot_grouped_bar_chart(df_new_clients, day_of_week, y)
+```
+\caption{Analysis of \textit{month} variable in the context of target variable.}
+\label{fig:multi-day}
+\end{figure}
+
+Similarily to the month we will analyse \textit{day of the week}. Coresponding plot can be found on Figure \ref{fig:multi-day}. As we previously expected there is no differences between particular days and we can skip this variable in modeling part.
+
+```{r}
+df_new_clients <- df_new_clients %>% 
+  dplyr::select(-day_of_week)
+```
+
+After all this analysis our resulting dataset have `r nrow(df_new_clients)` rows of observations and `r ncol(df_new_clients)` columns: `r colnames(df_new_clients)`. Some of the variables will require additional encoding but it will be our task in the next subsection connected to modeling part.
 
 \subsection{Classification}
-\label{subsec:classification}
-# Task description
-When, where, and how was the study done? What materials were used or who was included in the study groups (patients, etc.)
+In this part we will focus on classification task. Our goal is to predict for new clients in current telemarketer campaign who will subscribe bank term deposit. As we earlier spotted there exists class imbalance and it's equal to `r sum(df_new_clients['y'] == 'yes') / sum(df_new_clients['y'] == 'no')`. Due to this class disproportion our main classification metric will be area under precision recall curve (AUCPR). The reason is that in general to measure classification power we use AUC as it does not depend on classification threshold however it's known that it doesn't do well on imbalanced dataset and then it's good to use AUCPR. The short intuition behind that is that it combines precision and recall which both depends on minority class \textit{1} contrary to AUC which depends in their definition also on \textit{0} class which is majority class and overstates the results. Obviously we will also report other metrics such as accuracy, precision, recall and AUC. As a resampling method we will use 5-fold stratified cross-validation. We use stratification because we want to have real proportions of class in each fold and we use cross-validation to have better estimation of real error and our dataset is too small to use only holdout set. In our project we will test algorithms such as kNN, LDA, QDA, Logistic Regression, Decision Tree, Random Forest. We will also use different subset of variables depending of algorithm and check performance.
 
-- Methods and algorithms used in the project
-What methods / algorithms have been used? Which tasks these methods / algorithms were used for? (e.g. preliminary analysis and visualization, classifiaction, prediction, cluster analysis, etc.)
-
-* Classification
-** Objective - classification rule
-** Methods: LDA, QDA, KNN, other
-** Assessment of accuracy: Holdout / Cross Validation
-# End of the task description
-
-```{r, eval=FALSE}
-# Data transformations
-# DataExplorer::dummify
-df <- df %>% dplyr::select(age, duration, y)
-
-# Experiment design
-tasks = list(
-  TaskClassif$new(id = "full", backend = df, target = 'y')
-  # Next tasks ... i.e. data with different features
-)
-
-learners = c(
-  "classif.kknn",
-  "classif.lda",
-  "classif.qda"
-  # Other models ...
-)
-learners = lapply(learners, lrn, predict_type = "prob", predict_sets = c("train", "test"))
-
-resamplings = rsmp("cv", folds = 3)
-design = benchmark_grid(tasks, learners, resamplings)
-
-bmr = benchmark(design)
-```
-
-\subsubsection{Linear Discriminant Analysis}
-
-\subsubsection{Quadratic Discriminant Analysis}
-
-\subsubsection{k-Nearest Neighbours}
-
-\subsubsection{Decision Tree}
-
-\section{Results}
-\label{sec:results}
-
-# Task description
-What answer was found to the research question; what did the study find? Was the tested hypothesis true?
-
-Results presented in the form of corresponding tables, graphs and diagrams. Note that only the most important results should be included in the report, whereas additional results can be added as attachments.
-
-
-** Mehtods
-*** Summary statistics
-*** Plots
-# End of the task description
-
-
-```{r, eval=FALSE}
-# Results
+```{r}
 measures = list(
   msr("classif.acc", id = "accuracy_train", predict_sets = "train"),
   msr("classif.acc", id = "accuracy_test"),
@@ -248,24 +449,199 @@ measures = list(
   msr("classif.recall", id = "recall_train", predict_sets = "train"),
   msr("classif.recall", id = "recall_test"),
   msr("classif.auc", id = "auc_train", predict_sets = "train"),
-  msr("classif.auc", id = "auc_test")
+  msr("classif.auc", id = "auc_test"),
+  msr("classif.prauc", id = "aucpr_train", predict_sets = "train"),
+  msr("classif.prauc", id = "aucpr_test")
 )
 
-bmr$aggregate(measures)
+resamplings = rsmp("cv", folds = 5)
+```
+\subsubsection{k-Nearest Neighbours}
+
+We will start our journey with probably one of the simples machine learning algorithm - k-Nearest Neighbours. We analyse two combinations of variables: only numeric variables, all variables with categorical variables one-hot-encoded. Also as the kNN is based on distance we need to scale our socio-economic variables which range is much more different than other variables which are quite close to range (0,1). However we also wanted to do some experiment and check how does scaling affects the results so to sum up we have 4 different datasets which we will be checking. Moreover we will check k = 21.
+
+```{r}
+df_modeling <- df_new_clients %>% dplyr::select(-job, -marital, -education)
+df_modeling_dummified <- DataExplorer::dummify(df_new_clients, select = c('job', 'marital', 'education'))
+
+df_new_clients_scaled <- df_new_clients %>% 
+  mutate(cons.price.idx = scale(cons.price.idx),
+         cons.conf.idx = scale(cons.conf.idx),
+         euribor3m = scale(euribor3m))
+df_modeling_scaled <- df_new_clients_scaled %>% dplyr::select(-job, -marital, -education)
+df_modeling_scaled_dummified <- DataExplorer::dummify(df_new_clients_scaled, select = c('job', 'marital', 'education'))
+
+# Experiment design
+task_numeric = TaskClassif$new(id = "only-numeric", backend = df_modeling, target = 'y')
+task_numeric$col_roles$stratum = 'y'
+
+task_all = TaskClassif$new(id = "all-variables", backend = df_modeling_dummified, target = 'y')
+task_all$col_roles$stratum = 'y'
+
+task_scaled_numeric = TaskClassif$new(id = "only-numeric-scaled", backend = df_modeling_scaled, target = 'y')
+task_scaled_numeric$col_roles$stratum = 'y'
+
+task_scaled_all = TaskClassif$new(id = "all-variables-scaled", backend = df_modeling_scaled_dummified, target = 'y')
+task_scaled_all$col_roles$stratum = 'y'
+
+tasks_scaled = list(
+  task_numeric, 
+  task_all,
+  task_scaled_numeric,
+  task_scaled_all
+)
+
+tasks = list(
+  task_numeric,
+  task_all
+)
 ```
 
-\section{Discussion}
-\label{sec:discussion}
+```{r message=F, warning=F}
+learners = list(
+  lrn("classif.kknn", id = "knn 21", k = 21, predict_type = "prob", predict_sets = c("train", "test"))
+)
 
-# Task description
-What might the answer imply and why does it matter? How does it fit in with what other researchers have found? What are the perspectives for future research?
+design = benchmark_grid(tasks_scaled, learners, resamplings)
 
-- Conclusions
-Precise conclusions: what can be concluded from the analyses carried out? How these conclusions could be put into practice? (e.g. development of a new / better strategy in the company, new / better diagnostic methods, etc.)
+bmr_knn = benchmark(design)
+```
 
-- Further research suggestions
-Short information on further possible directions of research (what could / should be further studied and what additional methods / algorithms could be used?)
-# End of the task description
+```{r results='asis'}
+res_knn <- as.data.frame(t(as.matrix(bmr_knn$aggregate(measures))))
+
+kable(res_knn,
+      caption = "Results for LDA algorithm.",
+      label = "table:knn")
+```
+
+The results can be found in Table \ref{table:knn}. Our first notice about kNN is that it took a long time to train all clasifiers. It's understandable because it makes comparison all-to-all samples and when we have more than 30 thousands samples it takes a lot of time. Moreover we can observe on AUC and also other metrics that our models are very overfitted, scaling does not affect our results and higher number of neighbours gives a better results but still not ideal.
+
+\subsubsection{Linear Discriminant Analysis, Quadratic Discriminant Analysis}
+
+The next algorithm which we will use is a LDA and QDA. As it was mentioned during lab classes these algorithms are very stable and often forgives broken assumptions. Similarily to the previous case we will use four options of data: all numerica and all variables with categorical features one-hot encoded with scaled and normal version.
+
+```{r message=F, warning=F}
+learners = list(
+  lrn("classif.lda", id = "lda", predict_type = "prob", predict_sets = c("train", "test"))
+#  lrn("classif.qda", id = "qda", predict_type = "prob", predict_sets = c("train", "test"))
+)
+
+design = benchmark_grid(tasks_scaled, learners, resamplings)
+
+bmr_da = benchmark(design)
+```
+
+```{r}
+res_lda <- as.data.frame(t(as.matrix(bmr_da$aggregate(measures))))
+```
+```{r results='asis'}
+kable(res_lda,
+      caption = "Results for LDA algorithm.",
+      label = "table:lda")
+```
+
+Unfortunately for QDA algorithm we have received error about rank deficiency in group \textit{no}. Due to that fact we've only checked LDA algorithm. As we can observe in Table \ref{table:lda} the results are very stable because train and test scores are very similar. Also we can observe that results for  Moreover the final result of AUCPR is very high and is approximately equal to 0.95. Such a great result may be more than enough for our problem in real-world scenario. 
+
+\subsubsection{Logistic Regression}
+
+We have also tried simple Logistic Regression without any regularization. The setup will be standard one, i.e. without scaling in two versions - with all numeric variables and with one-hot encoded marital status, education and job.
+
+```{r message=F, warning=F}
+learners = list(
+  lrn("classif.log_reg", id = "log-reg", predict_type = "prob", predict_sets = c("train", "test"))
+)
+
+design = benchmark_grid(tasks, learners, resamplings)
+
+bmr_glm = benchmark(design)
+```
+
+```{r}
+res_glm <- as.data.frame(t(as.matrix(bmr_glm$aggregate(measures))))
+```
+```{r results='asis'}
+kable(res_glm,
+      caption = "Results for LDA algorithm.",
+      label = "table:lda")
+```
+
+The results of our Logistic Regression can be found in the Table \ref{table:glm}. As we can observe on all metrics this algorithm is very well fitted and has high score for all metrics. What's interesting adding categorical variables does not really improved results of the model.
+
+```{r results='asis'}
+m <- glm(y ~ ., family = binomial(), data = df_modeling_dummified)
+xtable(data.frame(sort(m$coefficients)),
+       caption = "Impurity feature importance for decision tree on all data.",
+       label = "table:fi-lr")
+```
+
+We wanted to also check coefficients of particular variables so we've trained one more time Logistic Regression on whole dataset with all variables and presented results in table \ref{table:fi-lr}. The most driving factor for subscribing a loan is a student status or being a retired and contacting via cellular phone. The opposite ones was Euribor, basic education and marital status (divorced / maried). Also we can observe that the intercept is very low. That means if we want to find people who will subscribe we need to look for a combination of a few very influential variables such as for example mentioned job status (student / retired).
+
+\subsubsection{Tree models}
+
+Our next models will be decision tree and its variation - random forest. We will use package \textit{ranger} which deals with categorical variables so we will only test one dataset which consists of all variables. Let's check how them perform.
+
+```{r}
+learners = list(
+  lrn("classif.ranger", id = "decision-tree", num.trees = 1, predict_type = "prob", predict_sets = c("train", "test")),
+  lrn("classif.ranger", id = "random-forest-50", num.trees = 50, predict_type = "prob", predict_sets = c("train", "test")),
+  lrn("classif.ranger", id = "random-forest-100", num.trees = 100, predict_type = "prob", predict_sets = c("train", "test"))
+)
+
+task = TaskClassif$new(id = "all", backend = df_new_clients, target = 'y')
+task$col_roles$stratum = 'y'
+
+design = benchmark_grid(task, learners, resamplings)
+
+bmr_tree = benchmark(design)
+```
+
+```{r message=F, warning=F}
+res_tree <- as.data.frame(t(as.matrix(bmr_tree$aggregate(measures))))
+```
+```{r results='asis'}
+kable(res_tree,
+      caption = "Results for tree algorithms.",
+      label = "table:tree")
+```
+
+The results of the tested trees can be found in Table \ref{table:tree}. We can observe that difference between training and test metrics are quite high for all models which means that models have overfitted. It can be especially easily seen of AUC metric. It would be probably a good idea to prune these trees and check how this would affect results.
+
+```{r results='asis'}
+m <- ranger(y ~ ., data = df_new_clients, num.trees = 1, importance = "impurity")
+xtable(data.frame(sort(m$variable.importance, decreasing = TRUE)),
+       caption = "Impurity feature importance for decision tree on all data.",
+       label = "table:fi-tree")
+```
+Also as an experiment we wanted to check what variables was important for a model. In Table \ref{table:fi-tree} we've presented results of impurity feature importance of single decision tree. We can observe that the most importance factor was \textit{age}, \textit{euribor3m} and \textit{job} and the least important was \textit{loan}, \textit{contact}, \textit{cons.price.idx}.
+
+\section{Results and discussion}
+\label{sec:results}
+After the whole analysis let's sum up what we've found out about our telemarketing dataset. First of all we've made extensive data analysis during which we precisely defined our modeling goal - predict whether client which have never been targeted in previous marketing campaigns will subscribe bank term deposit. Moreover we've stated one more important constraint - we wanted our model to be as much real-world applicapled as possible. This condition made us to exclude some variables from our modeling process. 
+After that analysis we've performed time and resources consuming process of model training. We've tested several models from which except predictions we've also extracted some knowledge. By analysis of logistic regression and decision tree we can conclude that \textit{age}, \textit{euribor}, \textit{job}, \textit{cons.conf.idx}, \textit{cons.price.idx} are the most important factors for modeling.
+
+```{r}
+final_results <- rbind(
+  bmr_knn$aggregate(measures),
+  bmr_da$aggregate(measures),
+  bmr_glm$aggregate(measures),
+  bmr_tree$aggregate(measures)
+)
+```
+```{r results='asis'}
+res <- final_results %>% 
+  dplyr::select(learner_id, task_id, aucpr_train, aucpr_test) %>% 
+  arrange(desc(aucpr_test)) %>% 
+  head(8)
+
+xtable(
+  res,
+  caption = "The best 8 models (ordered by AUCPR) from modeling part.",
+  label = "table:final"
+)
+```
+
+For our production model we would probably use Logistic Regression or LDA even though they are not the best AUCPR models how it's stated in summary Table \ref{table:final}. It's because Random Forest was overfitted and similarily the 7th and 8th kNN. However results of 0.95 for AUCPR is extremly high and for our mind it would satisfy real-world scenarios. But it should be noted that it's only a beginning of our modeling. There is a lot of work which could be done to deliver better results. The first steps we could take may be better hyperparameter tunning especially for random forest models. What's more we could make a stacked ensemble of the best models. Moreover we could try to investigate models better by techinques from eXplainable Artifical Intelligence which could possibly guide us in better model understanding. We could also probably work more with data - find new variables about customer which could be available in banking data system. The last thing which could be also should done before production deployment is a threshold optimization to decide how much clients we want to address and with what precision.
 
 \bibliographystyle{unsrt}
 \bibliography{references}
