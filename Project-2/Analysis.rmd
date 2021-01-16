@@ -83,84 +83,105 @@ df_new_clients <- df_new_clients %>%
 df_new_clients <- df_new_clients %>% 
   dplyr::select(-day_of_week)
 
-View(df_new_clients)
+# View(df_new_clients)
 ```
 
 \section{Introduction}
+In this report we will continue the analysis of the dataset \cite{dataset} connected to direct marketing campaigns of a Portuguese banking institution. This time we will explore dimension reduction techniques and cluster analysis.
 
-Cluster analysis with quality assessment
-Application of the selected dimension reduction method in connection with classification and cluster analysis
+We will begin our analytical journey with dimension reduction techniques during which we would like to better understand our dataset via visualization and extract useful features for classification and clustering. During exploration of the second one we would like to reveal the hidden structure of the data. Moreover we would like to find out how it is related to the response variable \textit{y} - information whether bank's product (term deposit) would be subscribed or not by given client. Furthermore we would like to find dependencies between clients in our dataset and identify some specific group of clients. Finally, we would like to utilize results of the dimension reduction techniques in the classification task and compare our results with previously obtained in the first report.
+
+```{r}
+# Cluster analysis with quality assessment
+# Application of the selected dimension reduction method in connection with classification and cluster analysis
+
+# Customer segmentation
+```
 
 \section{Methods}
 \label{sec:methods}
 
-\subsection{Data description}
-Telemarketing is one of the forms used to encourage clients to buy new bank's product. If we imagine real-world scenario it may be very hard to decide to which customer we should call in order to achive our goal (in this case bank term deposit subscription) because it's not possible to call them all as we have limited human resources of telemarketers. Such in this case we could use historical data about calls done in previous marketing campaigns to formulate conclusions about what type of clients are our target group and what part of the day / week / year is a good time for such a projects. Moreover after that we can create classification models which will learn to give us good recomendations which clients we should call in the first order.
+We will use all the transformations used in the first part of the project.
 
-In general our dataset can be splitted in five categories: bank client data, last contact of the current campaign, other attributes, social and economic context, outcome as we can observer in Table \ref{table:1}. First category describes general information about client - age, job, etc. Second category describes how the last contact with client was performed. There is also important note that Duration attribute highly affects the output target (e.g., if duration=0 then y="no"). Yet, the duration is not known before a call is performed. Also, after the end of the call y is obviously known. Thus, this input should only be included for benchmark purposes and we will discard it because our intention is to have a realistic predictive model. Third category in general tell us about previous campaigns and previous contacts with given person. There is also a note from dataset authors that Pdays equal 999 means client was not previously contacted. We will also note that in our data. Fourth category is about social and economic context attributes such as employment rate. This might give us information how was economy in this time and might be driving factor for some people. The last category is our outcome variable, i.e. flag if the client subsribed a term deposit.
-
-\begin{table}[]
-  \begin{center}
-    \begin{tabular}{|l|l|l|}
-      \hline
-      Variable name & Type & Description \\
-      \hline
-      \multicolumn{3}{|c|}{Bank client data} \\
-      \hline
-      Age & Numeric & Age of client  \\
-      Job & Categorical & Type of job\\
-      Marital & Categorical & Marital status of client \\
-      Education & Categorical & Education status of client \\
-      Default & Categorical & Has credit in default? \\
-      Housing & Categorical & Has housing loan? \\
-      Loan & Categorical & Has personal loan? \\
-      \hline
-      \multicolumn{3}{|c|}{Variables related with the last contact of the current campaign} \\
-      \hline
-      Contact & Categorical & Contact communication type \\
-      Month & Categorical & Last contact month of year \\
-      Day of week & Categorical & Last contact day of the week \\
-      Duration & Numeric & Last contact duration, in seconds \\
-      \hline
-      \multicolumn{3}{|c|}{Other attributes} \\
-      \hline
-      Campaign & Numeric & Number of contacts performed during this campaign \\
-      Pdays & Numeric & Number of days that passed by after the client was last \\
-       & & contacted from a previous campaign \\
-      Previous & Numeric & Number of contacts performed before this campaign \\
-      Poutcome & Categorical & Outcome of the previous marketing campaign \\
-      \hline
-      \multicolumn{3}{|c|}{Social and economic context attributes} \\
-      \hline
-      Emp.var.rate & Numeric & Employment variation rate - quarterly indicator \\
-      Cons.price.idx & Numeric & Consumer price index - monthly indicator \\
-      Cons.conf.idx & Numeric & Consumer confidence index - monthly indicator \\
-      Euribor3m & Numeric & Euribor 3 month rate - daily indicator \\
-      Nr. employed & Numeric & Number of employees - quarterly indicator \\
-      \hline
-      \multicolumn{3}{|c|}{Outcome variable} \\
-      \hline
-      y & Categorical & Has the client subscribed a term deposit? \\
-      \hline
-    \end{tabular}
-  \end{center}
-  \caption{Input variables.}
-  \label{table:1}
-\end{table}
-
-\subsection{Data analysis}
-\label{subsec:data-analysis}
+In the following sections we through dimenstion reduction techniques where we will visualize date and prepare data to the next tasks - classification and cluster analysis.
 
 \subsection{Dimension reduction}
-Objective: feature extraction / visualization
-Methods: 
- - PCA
- - MDS
- - ICA
- - NMF
+In this section we will go through a few dimension reduction techniques in order to visualize our dataset from different perspectives and look for interesting patterns which we hope to utilize in next section connected to classification and cluster analysis. We will use and compare following methods:
+\begin{itemize}
+  \item Principal component analysis (PCA),
+  \item Multidimensional scaling (MDS),
+  \item Independent component analysis (ICA),
+  \item Non-negative matrix factorization (NMF).
+ \end{itemize}
  
- \subsubsection{Principal components analysis}
+\subsubsection{Principal components analysis}
+We will begin with principal components analysis. As a first try we will take whole dataset, conduct one hot encoding for categorical variables, remove target variable and analyse the obtained results in context of target variable. As a first try we will only center our data withou scaling however we already known from the first report that socio-economic variables has huge values compared to the other variables and we expect that results may be higlhy influenced by these variables.
+
+\begin{figure}
+```{r fig.width=8, fig.height=4}
+results_pca <- df_new_clients %>% 
+  dplyr::select(-y) %>% 
+  DataExplorer::dummify() %>% 
+  prcomp(scale. = FALSE, center = TRUE)
+
+results_pca_df <- data.frame(results_pca$x)
+results_pca_df['y'] <- df_new_clients['y']
+results_pca_df %>% 
+  ggplot(aes(x = PC1, y = PC2, color = y)) +
+  geom_point(size = 1)
+```
+\caption{Results of the Principal component analysis without scaling in the context of \textit{y} variable.}
+\label{fig:pca-all-data-no-scaling}
+\end{figure}
+
+The results of the PCA without scaling we can observe on Figure \ref{fig:pca-all-data-no-scaling}. As we expected the principal components have big values which are probably influenced by socio-economic variables. Let's explore the formulated cluster with \textit{PC1 < -80000} and \textit{PC2 > 0} values and find out what data is this subspace.
+
+```{r results=asis}
+indices <- results_pca_df %>% 
+  mutate(n = 1:n()) %>% 
+  filter(PC1 < -80000, PC2 > 0) %>% 
+  pull(n)
+
+df_new_clients[indices, ] %>% 
+  select(emp.var.rate, cons.price.idx, cons.conf.idx, euribor3m) %>% 
+  head(20) %>% 
+  kable(
+    caption = "Example data from PCA's (without scaling) one cluster.",
+    label = "table:pca-cluster-example"
+  )
+```
+
+We can observe part of the results in the Table \ref{table:pca-cluster-example}. We only present a small subset of the extracted cluster however we can easily observe that the socio-economic values were indicating character of this group. We expect that rest of the formulated clusters have a similar structure. In context of the extracting knowledge it may be very interesting result because it's possible to extract some correlated periods in economics however in context of clients clustering or term deposit subscription (because we cannot see any particular structure in \textit{y} variable) it's not a direction we want to follow. Let's explore if something will change when we scale our dataset.
+
+\begin{figure}
+```{r fig.width=8, fig.height=4}
+results_pca <- df_new_clients %>% 
+  dplyr::select(-y) %>% 
+  DataExplorer::dummify() %>% 
+  prcomp(scale. = TRUE, center = TRUE)
+
+results_pca_df <- data.frame(results_pca$x)
+results_pca_df['y'] <- df_new_clients['y']
+results_pca_df %>% 
+  ggplot(aes(x = PC1, y = PC2, color = y)) +
+  geom_point(size = 1)
+```
+\caption{Results of the Principal component analysis with scaling in the context of \textit{y} variable.}
+\label{fig:pca-all-data-scaling}
+\end{figure}
+
+We can observe obtained results on the Figure \ref{fig:pca-all-data-scaling}. We can distinguish some area of the plot which is mostly covered by \textit{no} response - lower and upper part of the plot, and middle one with the advantage of \textit{yes} response. That's a very good information in context of our classification task where such a structure may be very helpful for a model.
+
+However for clusters analysis we would like to analyse information only about clients so we will use only variables connected to them and skip variables connect to socio-economic factors. The resulting variables are as follows:
+ \begin{itemize}
+  \item age,
+  \item job,
+  \item marital
+  \item education,
+  \item housing,
+  \item loan.
  
+\begin{figure}
 ```{r}
 results_pca <- df_new_clients %>% 
   dplyr::select(-y) %>% 
@@ -174,10 +195,20 @@ results_pca_df %>%
   ggplot(aes(x = PC1, y = PC2, color = y)) +
   geom_point(size = 1)
 ```
+\caption{Results of the Principal component analysis in the context of \textit{y} variable using age, job, marital, education, housing, loan variables.}
+\label{fig:pca-clusters}
+\end{figure}
+
+```{r}
+biplot(results_pca)
+```
+
+
+The results we can observe on the Figure \ref{fig:pca-clusters}. We can 
 
 \subsubsection{Multidimensional scalling}
 
-Not possible to calculate ...
+Not possible to calculate ... as they need to calculate all comparisons between ~34000 samples ? Maybe resampling ?
 
 \subsubsection{FastICA}
 ```{r}
@@ -202,19 +233,34 @@ Same as PCA
 ```{r}
 results_nmf <- df_new_clients %>% 
   dplyr::select(-y) %>% 
-  dplyr::select(age, job, marital, education, housing, loan) %>% 
-  DataExplorer::dummify() %>% 
+  dplyr::select(job, marital, education, housing, loan) %>% 
   DataExplorer::dummify() %>% 
   nmf(rank = 2)
 
-results_nmf_H <- results_nmf@fit@H
 results_nmf_W <- data.frame(results_nmf@fit@W)
 results_nmf_W['y'] <- df_new_clients['y']
 
-ggplot(results_nmf_W, aes(x = X1, y = X2, color = y)) +
-  geom_point()
+fig_base <- ggplot(results_nmf_W, aes(x = X1, y = X2, color = y)) +
+  geom_point() +
+  ggtitle('NMF without age variable') +
+  theme(legend.position = "none")
+
+results_nmf <- df_new_clients %>% 
+  dplyr::select(-y) %>% 
+  dplyr::select(age, job, marital, education, housing, loan) %>% 
+  DataExplorer::dummify() %>% 
+  nmf(rank = 2)
+
+results_nmf_W <- data.frame(results_nmf@fit@W)
+results_nmf_W['y'] <- df_new_clients['y']
+
+fig_age <- ggplot(results_nmf_W, aes(x = X1, y = X2, color = y)) +
+  geom_point() +
+  ggtitle('NMF with age variable')
+
+fig_base | fig_age
 ```
-Explore more...
+
 
 \subsection{Classification}
 Similar to the 1. project
@@ -223,15 +269,28 @@ Similar to the 1. project
 Objective: group objects according to their similarity
 Methods: 
  - k-means
- - PAM
- - AGNES
+ - Partition Around Medoids (PAM)
+ - Aglomerative Nesting (AGNES) 
  - Other (HDBSCAN?)
 Quality assessment of cluster analysis results:
  - Average silhouette vs different K
- - Separation / Compactness / Other ideas
+ - Separation / Compactness / Connectedness
  
+ Ideas:
+  - Use Custering LARge Applications (CLARA) instead PAM if computations are slow
+  - Different dissimilarity measures - Gower distance
+  - Analyse what are the characteristic properties of objects thatwere assign to a given cluster (for example, in individualclusters you can analyse: average values for numerical featuresand counts for qualitative features).
+  - Dendogram and banner plot for AGNES
+  - Single / Complete / Average linkage for AGNES
+  - Dunn index for cluster results analysis
 
-
+Cluster results analysis:  
+ - Internal validation:Use the averagesilhouette indexto comparethe results obtained for different clustering algorithms (e.g. PAMand AGNES) and for a different number of clustersK. Try to decideon the optimal number of clusters.
+ - External validation:Use simple contingency table (confusionmatrix) to compare clustering results with real class membership. Compare results for different clustering algorithms, includingpartitioning and hierarchical methods. (Hint: you can use functionmatchClasses{e1071} to find anoptimal assignment (mapping) between two set of labels).
+  
+  Notes:
+   - AGNES will probably require data sampling
+  
 \section{Results and discussion}
 \label{sec:results}
 
