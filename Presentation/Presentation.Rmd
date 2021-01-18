@@ -26,7 +26,7 @@ data("iris")
 x <- iris[1:4]
 y <- iris[5]
 
-results_iris_pc <- prcurve(x, maxit = 100)
+results_iris_pc <- prcurve(x, plotit = TRUE, maxit = 100)
 results_iris_pc
 ```
 
@@ -92,21 +92,9 @@ fig <- ggplot() +
 fig
 ```
 
-
-```{r}
-x_new <- sample_n(x, size = 20)
-# New date into PC space
-s_new <- predict(results_iris_pc, x_new) # New data on curve
-s_new_pc_space <- predict(results_iris_pc$ordination, s_new, type = "wa", scaling = 0)[, 1:2] %>% as.data.frame()# From curve to PC space
-
-fig +
-  geom_point(data = s_new_pc_space, mapping = aes(x = PC1, y = PC2))
-```
-
 # Principal Surface
 
-
-
+There is no publicly available package.
 
 # ICA
 
@@ -166,10 +154,26 @@ y <- iris[5]
 
 ```{r}
 results_iris_ica <- fastICA(x, n.comp = 2)
-results_iris_ica
-# TODO: Explain different matrices
 ```
 
+A list containing the following components:
+
+* Pre-whitening matrix that projects data onto the first n.comp principal components.
+```{r}
+results_iris_ica$K
+```
+
+* Estimated un-mixing matrix
+```{r}
+results_iris_ica$W
+```
+
+* Estimated mixing matrix
+```{r}
+results_iris_ica$A
+```
+
+* Estimated source matrix
 ```{r}
 S <- data.frame(results_iris_ica$S)
 S['class'] <- y
