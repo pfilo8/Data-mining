@@ -180,7 +180,7 @@ variances %>%
 \label{fig:pca-variance}
 \end{figure}
 
-We can observe on Figure \ref{fig:pca-variance} that our first component explains only around $10%$ of the variance. Moreover we require first seventeen component to explain more than $80%$ of variance. That could potentialy explain why we don't have such a clear groups in the 2D plot. Based on these observations we will take these components for classification task.
+We can observe on Figure \ref{fig:pca-variance} that our first component explains only around 10% of the variance. Moreover we require first seventeen component to explain more than 80% of variance. That could potentialy explain why we don't have such a clear groups in the 2D plot. Based on these observations we will take these components for classification task.
 
 ```{r results='asis'}
 results_pca$rotation[, 1] %>% abs() %>% sort(decreasing = TRUE) %>% data.frame() %>% head(10) %>% 
@@ -223,7 +223,7 @@ results_pca_df %>%
 
 As we can observe we've obtained clearly separable clusters for only 2D results which is very interesting and may be very useful for clustering task. Similarily to the previous PCA analysis let's explore one cluster, for example \textit{PC1 < -1}.
 
-```{r}
+```{r results='asis'}
 indices <- results_pca_df %>% 
   mutate(n = 1:n()) %>% 
   filter(PC1 < -1) %>% 
@@ -250,9 +250,156 @@ biplot(results_pca)
 
 Let's explore a little bit more this PCA resutls and observe Figure \ref{fig:pca-biplot}. We can cleary see that on the left upper corner we've got married people and on the other side we've got respectively divorced and single people which in general create group of the single people. On the opposite diagonal we have got encoded information about job and education. On the lower left corenr we've got correlated blue collar jobs and basic education and on the opposite side we've got administration jobs with university education. To our mind this is very interesting and exciting results as it was possible to so clearly distinguish groups of people.
 
-\subsubsection{Multidimensional scalling}
+```{r}
+results_pca_df['job'] <- df_new_clients['job']
+results_pca_df['marital'] <- df_new_clients['marital']
+results_pca_df['education'] <- df_new_clients['education']
+```
 
-Not possible to calculate ... as they need to calculate all comparisons between ~34000 samples ? Maybe resampling ?
+\begin{figure}
+```{r fig.height=8, fig.width=5}
+plot_marital <- results_pca_df %>% 
+  ggplot(aes(x = PC1, y = PC2, color = marital)) +
+  geom_point(size = 1)
+
+plot_job <- results_pca_df %>% 
+  ggplot(aes(x = PC1, y = PC2, color = job)) +
+  geom_point(size = 1)
+
+plot_education <- results_pca_df %>% 
+  ggplot(aes(x = PC1, y = PC2, color = education)) +
+  geom_point(size = 1)
+
+plot_marital / plot_job / plot_education
+```
+\caption{Results of the Principal component analysis in the context of \text{marital}, \textit{job}, \textit{education} variable using age, job, marital, education, housing, loan variables.}
+\label{fig:pca-ca-analysis}
+\end{figure}
+
+We checked these hypothesis on Figure \ref{fig:pca-ca-analysis}. We can clearly confirm our observation about marital status and seperate groups between three formulated lines. In the context of job we can also confirm that we have separate groups of administration and blue collar jobs. Moreover we can observe some kind of the structure in center clusters. At the last part of this plot we can observe some structure in education where on the bottom part we've got people with basic education, in the middle mixed but with majority of high school and professional courses, lastly we have at the top people with university degree.
+
+At this point we will end up our PCA analysis. We've performed extensive analysis with very interesting results which will be definitely utilized during classification and cluster analysis. In context of the cluster analysis we could even say that we've partialy performed it with very satisfactory results.
+
+\subsubsection{Multidimensional scaling}
+In this section we will test another dimension reduction technique - multidimensional scaling. At this moment we recall that our dataset has `r nrow(df_new_clients)` rows. It's important in this moment because this method uses similarity matrix which has to compare all rows to all rows. In our case it would produce very big matrix which may be not possible to handle. Because of that fact we will use randomly selected 15% of our dataset with stratification on \textit{y} variable.
+
+```{r}
+df_new_client_yes <- df_new_clients %>% 
+  filter(y == 'yes') %>% 
+  sample_frac(0.15)
+
+df_new_client_no <- df_new_clients %>% 
+  filter(y == 'no') %>% 
+  sample_frac(0.15)
+
+df_new_clients_sample <- rbind.data.frame(df_new_client_no, df_new_client_yes)
+```
+
+```{r cache=TRUE}
+dissimilarities <- df_new_clients_sample %>% 
+  dplyr::select(-y) %>% 
+  mutate(
+    job = factor(job),
+    marital = factor(marital),
+    education = factor(education),
+    loan = factor(loan), 
+    campaign = factor(campaign),
+    contact_cellular = factor(contact_cellular)
+  ) %>% 
+  daisy() %>% 
+  as.matrix()
+
+mds <- cmdscale(dissimilarities)
+```
+
+\begin{figure}
+```{r}
+mds.df <- mds %>% data.frame()
+mds.df <- bind_cols(mds.df, df_new_clients_sample)
+
+mds.df %>% 
+  ggplot(aes(x = X1, y = X2, color = y)) +
+  geom_point()
+```
+\caption{Results of the Multidimensional scaling in context of \textit{y} variable.}
+\label{fig:mds}
+\end{figure}
+
+We've performed dissimilarity calculation using gower metric without standarization (using standarization doesn't change anything) using all variables except \textit{y} and then used multidimensional scaling with rank equal 2. The results can be found on Figure \ref{fig:mds}. We can easily see two disjoint groups however unfortunately without clear separation on \textit{y}. Let's find out by which variables our transformed data was separated.
+
+\begin{figure}
+```{r fig.height=8, fig.width=5}
+plot_housing <- mds.df %>% 
+  ggplot(aes(x = X1, y = X2, color = housing)) +
+  geom_point()
+
+plot_loan <- mds.df %>% 
+  ggplot(aes(x = X1, y = X2, color = loan)) +
+  geom_point()
+
+plot_euribor <- mds.df %>% 
+  ggplot(aes(x = X1, y = X2, color = euribor3m)) +
+  geom_point()
+
+plot_housing / plot_loan / plot_euribor
+```
+\caption{Results of the Multidimensional scaling in the context of \text{housing}, \textit{loan}, \textit{euribor3m} variables.}
+\label{fig:mds-housing-loan-euribor}
+\end{figure}
+
+We conclude from Figure \ref{fig:mds-housing-loan-euribor} that main splitting factor was housing. The other two the most interesting variables in our opinion was loan and euribor. Separation and specific areas of subgroups for the other variables also could be seen however not so clearly. Similarily to PCA example let's explore only client specific data.
+
+
+```{r cache=TRUE}
+dissimilarities_client <- df_new_clients_sample %>% 
+  dplyr::select(-y) %>% 
+  mutate(
+    job = factor(job),
+    marital = factor(marital),
+    education = factor(education),
+    loan = factor(loan), 
+    campaign = factor(campaign)
+  ) %>% 
+  dplyr::select(job, marital, education, housing, loan) %>% 
+  daisy() %>% 
+  as.matrix()
+
+mds_client <- cmdscale(dissimilarities_client)
+```
+
+\begin{figure}
+```{r}
+mds_client.df <- mds_client %>% data.frame()
+mds_client.df <- bind_cols(mds_client.df, df_new_clients_sample)
+
+mds_client.df %>% 
+  ggplot(aes(x = X1, y = X2, color = y)) +
+  geom_point()
+```
+\caption{Results of the Multidimensional scaling in context of \textit{y} variable for only client data.}
+\label{fig:mds-client}
+\end{figure}
+
+We can observe results of the MDS in context of only client data on Figure \ref{fig:mds-client}. Also here we can find some separate groups. However this time we also cannot see any particular pattern in context of target variable. In next step we will try to find which variables separates groups.
+
+\begin{figure}
+```{r}
+mds_client.df %>% 
+  mutate(
+    housing = factor(housing),
+    loan = factor(loan)
+  ) %>% 
+  ggplot(aes(x = X1, y = X2, color = housing, shape = loan)) +
+  geom_point(size = 2, alpha = 0.7) + 
+  scale_shape_manual(values = c(0, 4))
+```
+\caption{Results of the Multidimensional scaling in context of \textit{housing} and \textit{loan} variables for only client data.}
+\label{fig:mds-client-separate}
+\end{figure}
+
+After quick search we've obtained the following results which are presented also on Figure \ref{fig:mds-client-separate}. Our main separating varialbe is \textit{housing} and in the group of clients which have a house we can also distinguish people with and without loan. It's quite interesting pattern because it's very natural separation in real-world as people can have house on credit / on their own or doesn't have a house and may or may not have a loan.
+
+Concluding, multidimensional scaling gave us also very interesting results, especially in context of data visualization / understanding and grouping. It also may be very powerful tool for us in the next sections connected to classification and cluster analysis.
 
 \subsubsection{FastICA}
 ```{r}
