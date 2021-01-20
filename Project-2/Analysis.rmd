@@ -35,9 +35,6 @@ library(latex2exp)
 library(fastICA)
 library(NMF)
 
-COLOR_1 <- '#18729E'
-COLOR_2 <- '#EAC9A2'
-
 df <- read_csv2('data/bank-additional-full.csv')
 df[, 'y'] <- as.factor(df$y)
 
@@ -89,21 +86,11 @@ df_new_clients <- df_new_clients %>%
 \section{Introduction}
 In this report we will continue the analysis of the dataset \cite{dataset} connected to direct marketing campaigns of a Portuguese banking institution. This time we will explore dimension reduction techniques and cluster analysis.
 
-We will begin our analytical journey with dimension reduction techniques during which we would like to better understand our dataset via visualization and extract useful features for classification and clustering. During exploration of the second one we would like to reveal the hidden structure of the data. Moreover we would like to find out how it is related to the response variable \textit{y} - information whether bank's product (term deposit) would be subscribed or not by given client. Furthermore we would like to find dependencies between clients in our dataset and identify some specific group of clients. Finally, we would like to utilize results of the dimension reduction techniques in the classification task and compare our results with previously obtained in the first report.
-
-```{r}
-# Cluster analysis with quality assessment
-# Application of the selected dimension reduction method in connection with classification and cluster analysis
-
-# Customer segmentation
-```
+We will begin our analytical journey with dimension reduction techniques during which we would like to better understand our dataset via visualization and extract useful features for classification and clustering. During exploration of the second task we would like to reveal the hidden structure of the data. Moreover we would like to find out how it is related to the response variable \textit{y} - information whether bank's product (term deposit) would be subscribed or not by given client. Furthermore we would like to find dependencies between clients in our dataset and identify some specific group of clients. Finally, we would like to utilize results of the dimension reduction techniques in the classification task and compare our results with previously obtained in the first report.
 
 \section{Methods}
 \label{sec:methods}
-
-We will use all the transformations used in the first part of the project.
-
-In the following sections we through dimenstion reduction techniques where we will visualize date and prepare data to the next tasks - classification and cluster analysis.
+In the following sections we will go through all mentioned in introduction tasks - dimension reduction, classification and cluster analysis. We will use all the transformations used in the first part of the project in context of the classification, i.e. we will focus only on the new clients who has never been targeted in previous campaigns and additionaly we performed data transformations connected to missing data, rare values and categorical variables encoding.
 
 \subsection{Dimension reduction}
 In this section we will go through a few dimension reduction techniques in order to visualize our dataset from different perspectives and look for interesting patterns which we hope to utilize in next section connected to classification and cluster analysis. We will use and compare following methods:
@@ -115,7 +102,7 @@ In this section we will go through a few dimension reduction techniques in order
  \end{itemize}
  
 \subsubsection{Principal components analysis}
-We will begin with principal components analysis. As a first try we will take whole dataset, conduct one hot encoding for categorical variables, remove target variable and analyse the obtained results in context of target variable. As a first try we will only center our data withou scaling however we already known from the first report that socio-economic variables has huge values compared to the other variables and we expect that results may be higlhy influenced by these variables.
+We will begin with principal components analysis. Firstly we will try naive approach and take whole dataset, conduct one hot encoding for categorical variables, remove target variable and analyse the obtained results in context of target variable. Moreover we will only center our data without scaling and treat it as a experiment how does scaling influence the results. We already known from the first report that socio-economic variables has huge values compared to the other variables and we expect that results may be higlhy influenced by these variables.
 
 \begin{figure}
 ```{r fig.width=8, fig.height=4}
@@ -134,9 +121,9 @@ results_pca_df %>%
 \label{fig:pca-all-data-no-scaling}
 \end{figure}
 
-The results of the PCA without scaling we can observe on Figure \ref{fig:pca-all-data-no-scaling}. As we expected the principal components have big values which are probably influenced by socio-economic variables. Let's explore the formulated cluster with \textit{PC1 < -80000} and \textit{PC2 > 0} values and find out what data is this subspace.
+The results of the PCA without scaling we can observe on Figure \ref{fig:pca-all-data-no-scaling}. As we expected the principal components have big values which are probably influenced by socio-economic variables. Let's explore the formulated cluster with \textit{PC1 < -80000} and \textit{PC2 > 0} values and find out what data is in this subspace.
 
-```{r results=asis}
+```{r results='asis'}
 indices <- results_pca_df %>% 
   mutate(n = 1:n()) %>% 
   filter(PC1 < -80000, PC2 > 0) %>% 
@@ -145,13 +132,13 @@ indices <- results_pca_df %>%
 df_new_clients[indices, ] %>% 
   select(emp.var.rate, cons.price.idx, cons.conf.idx, euribor3m) %>% 
   head(20) %>% 
-  kable(
+  xtable(
     caption = "Example data from PCA's (without scaling) one cluster.",
     label = "table:pca-cluster-example"
   )
 ```
 
-We can observe part of the results in the Table \ref{table:pca-cluster-example}. We only present a small subset of the extracted cluster however we can easily observe that the socio-economic values were indicating character of this group. We expect that rest of the formulated clusters have a similar structure. In context of the extracting knowledge it may be very interesting result because it's possible to extract some correlated periods in economics however in context of clients clustering or term deposit subscription (because we cannot see any particular structure in \textit{y} variable) it's not a direction we want to follow. Let's explore if something will change when we scale our dataset.
+We can observe part of the results in the Table \ref{table:pca-cluster-example}. We only present a small subset of the extracted cluster however we can easily observe that the socio-economic values were indicating character of this group. We expect that rest of the formulated clusters have a similar structure. In context of the extracting knowledge it may be very interesting result because it's possible to extract some correlated periods in economics however in context of clients clustering or term deposit subscription it's not a direction we want to follow (because we cannot see any particular structure in \textit{y} variable). Let's explore if something will change when we scale our dataset.
 
 \begin{figure}
 ```{r fig.width=8, fig.height=4}
@@ -170,9 +157,42 @@ results_pca_df %>%
 \label{fig:pca-all-data-scaling}
 \end{figure}
 
-We can observe obtained results on the Figure \ref{fig:pca-all-data-scaling}. We can distinguish some area of the plot which is mostly covered by \textit{no} response - lower and upper part of the plot, and middle one with the advantage of \textit{yes} response. That's a very good information in context of our classification task where such a structure may be very helpful for a model.
+We can observe obtained results on the Figure \ref{fig:pca-all-data-scaling}. We can distinguish some area of the plot which is mostly covered by \textit{no} response - lower and upper part of the plot, and middle one with the advantage of \textit{yes} response. That's a very good information in context of our classification task where such a structure may be very helpful for a model. Let's explore more deeply these results and find out what number of the components should be optimal and what variables are in these components.
 
-However for clusters analysis we would like to analyse information only about clients so we will use only variables connected to them and skip variables connect to socio-economic factors. The resulting variables are as follows:
+\begin{figure}
+```{r fig.width=8, fig.height=4}
+component <- sapply(1:29, function(i) {paste(i, sep = "")})
+variance <- (results_pca$sdev ^2)/sum(results_pca$sdev^2)
+cumulative.variance <- cumsum(variance)
+
+variances <- data.frame(
+  component = factor(component, levels = component),
+  variance = variance,
+  cumuluative.variance = cumulative.variance
+)
+
+variances %>% 
+  ggplot(aes(x = component, y = cumulative.variance)) +
+  geom_bar(stat = 'identity') +
+  geom_hline(yintercept = 0.8, color = 'red')
+```
+\caption{Cummulative variance plot for PCA with data scaling.}
+\label{fig:pca-variance}
+\end{figure}
+
+We can observe on Figure \ref{fig:pca-variance} that our first component explains only around $10%$ of the variance. Moreover we require first seventeen component to explain more than $80%$ of variance. That could potentialy explain why we don't have such a clear groups in the 2D plot. Based on these observations we will take these components for classification task.
+
+```{r results='asis'}
+results_pca$rotation[, 1] %>% abs() %>% sort(decreasing = TRUE) %>% data.frame() %>% head(10) %>% 
+  xtable(
+    label = 'tab:PCA-first-component',
+    caption = 'Top 10 most influential variables in the first component of PCA with scaling.'
+  )
+```
+
+Let's also take a look into Table \ref{tab:PCA-first-component} where we have information about content of the first PCA's component. It contains mostly information about basic/univesristy education, marital status and blue collar / administration job.
+
+So far we have prepared PCA for classification task and now we will focus on PCA in context of clusters analysis. In this case we would like to analyse information only about clients so we will use only variables connected to them and skip variables connect to socio-economic factors. The resulting variables are as follows:
  \begin{itemize}
   \item age,
   \item job,
@@ -180,14 +200,16 @@ However for clusters analysis we would like to analyse information only about cl
   \item education,
   \item housing,
   \item loan.
+\end{itemize}
+We've tested the different combinations of PCA - with / without scaling and with / without age variable (which is the only one numeric variable). The most interesting results we've obtained for PCA without scaling and without age variable. The results are presented on Figure \ref{fig:pca-clusters}.
  
 \begin{figure}
 ```{r}
 results_pca <- df_new_clients %>% 
   dplyr::select(-y) %>% 
-  dplyr::select(age, job, marital, education, housing, loan) %>% 
+  dplyr::select(job, marital, education, housing, loan) %>% 
   DataExplorer::dummify() %>% 
-  prcomp(scale. = TRUE, center = TRUE)
+  prcomp(scale. = FALSE, center = TRUE)
 
 results_pca_df <- data.frame(results_pca$x)
 results_pca_df['y'] <- df_new_clients['y']
@@ -199,12 +221,34 @@ results_pca_df %>%
 \label{fig:pca-clusters}
 \end{figure}
 
+As we can observe we've obtained clearly separable clusters for only 2D results which is very interesting and may be very useful for clustering task. Similarily to the previous PCA analysis let's explore one cluster, for example \textit{PC1 < -1}.
+
+```{r}
+indices <- results_pca_df %>% 
+  mutate(n = 1:n()) %>% 
+  filter(PC1 < -1) %>% 
+  pull(n)
+
+df_new_clients[indices, ] %>% 
+  select(job, marital, education, housing, loan) %>% 
+  head(20) %>% 
+  xtable(
+    caption = "Example data from PCA's for cluster analysis one cluster.",
+    label = "table:pca-ca-cluster-example"
+  )
+```
+
+As we can observe in the Table \ref{table:pca-ca-cluster-example} we have found cluster of people who work as a blue collars, are married and have basic education. It's very interesting result as we will be able to found very homogenous group of people.
+
+\begin{figure}
 ```{r}
 biplot(results_pca)
 ```
+\caption{Biplot of the Principal component analysis using job, marital, education, housing, loan variables.}
+\label{fig:pca-biplot}
+\end{figure}
 
-
-The results we can observe on the Figure \ref{fig:pca-clusters}. We can 
+Let's explore a little bit more this PCA resutls and observe Figure \ref{fig:pca-biplot}. We can cleary see that on the left upper corner we've got married people and on the other side we've got respectively divorced and single people which in general create group of the single people. On the opposite diagonal we have got encoded information about job and education. On the lower left corenr we've got correlated blue collar jobs and basic education and on the opposite side we've got administration jobs with university education. To our mind this is very interesting and exciting results as it was possible to so clearly distinguish groups of people.
 
 \subsubsection{Multidimensional scalling}
 
