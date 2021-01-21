@@ -41,6 +41,8 @@ df[, 'y'] <- as.factor(df$y)
 df <- df %>% mutate(
   pdays = na_if(pdays, 999)
 )
+
+set.seed(42)
 ```
 
 ```{r}
@@ -96,9 +98,7 @@ In the following sections we will go through all mentioned in introduction tasks
 In this section we will go through a few dimension reduction techniques in order to visualize our dataset from different perspectives and look for interesting patterns which we hope to utilize in next section connected to classification and cluster analysis. We will use and compare following methods:
 \begin{itemize}
   \item Principal component analysis (PCA),
-  \item Multidimensional scaling (MDS),
-  \item Independent component analysis (ICA),
-  \item Non-negative matrix factorization (NMF).
+  \item Multidimensional scaling (MDS).
  \end{itemize}
  
 \subsubsection{Principal components analysis}
@@ -295,7 +295,7 @@ df_new_client_no <- df_new_clients %>%
 df_new_clients_sample <- rbind.data.frame(df_new_client_no, df_new_client_yes)
 ```
 
-```{r cache=TRUE}
+```{r}
 dissimilarities <- df_new_clients_sample %>% 
   dplyr::select(-y) %>% 
   mutate(
@@ -350,7 +350,7 @@ plot_housing / plot_loan / plot_euribor
 We conclude from Figure \ref{fig:mds-housing-loan-euribor} that main splitting factor was housing. The other two the most interesting variables in our opinion was loan and euribor. Separation and specific areas of subgroups for the other variables also could be seen however not so clearly. Similarily to PCA example let's explore only client specific data.
 
 
-```{r cache=TRUE}
+```{r}
 dissimilarities_client <- df_new_clients_sample %>% 
   dplyr::select(-y) %>% 
   mutate(
@@ -400,58 +400,6 @@ mds_client.df %>%
 After quick search we've obtained the following results which are presented also on Figure \ref{fig:mds-client-separate}. Our main separating varialbe is \textit{housing} and in the group of clients which have a house we can also distinguish people with and without loan. It's quite interesting pattern because it's very natural separation in real-world as people can have house on credit / on their own or doesn't have a house and may or may not have a loan.
 
 Concluding, multidimensional scaling gave us also very interesting results, especially in context of data visualization / understanding and grouping. It also may be very powerful tool for us in the next sections connected to classification and cluster analysis.
-
-\subsubsection{FastICA}
-```{r}
-results_ica <- df_new_clients %>% 
-  dplyr::select(-y) %>% 
-  dplyr::select(age, job, marital, education, housing, loan) %>% 
-  DataExplorer::dummify() %>% 
-  scale() %>% 
-  fastICA(n.comp = 2)
-```
-```{r}
-results_ica_s <- data.frame(results_ica$S)
-results_ica_s['y'] <- df_new_clients['y']
-
-ggplot(results_ica_s, aes(x = X1, y = X2, color = y)) + 
-  geom_point(size = 1)
-```
-Same as PCA
-
-\subsubsection{Non-negative matrix factorization}
-
-```{r}
-results_nmf <- df_new_clients %>% 
-  dplyr::select(-y) %>% 
-  dplyr::select(job, marital, education, housing, loan) %>% 
-  DataExplorer::dummify() %>% 
-  nmf(rank = 2)
-
-results_nmf_W <- data.frame(results_nmf@fit@W)
-results_nmf_W['y'] <- df_new_clients['y']
-
-fig_base <- ggplot(results_nmf_W, aes(x = X1, y = X2, color = y)) +
-  geom_point() +
-  ggtitle('NMF without age variable') +
-  theme(legend.position = "none")
-
-results_nmf <- df_new_clients %>% 
-  dplyr::select(-y) %>% 
-  dplyr::select(age, job, marital, education, housing, loan) %>% 
-  DataExplorer::dummify() %>% 
-  nmf(rank = 2)
-
-results_nmf_W <- data.frame(results_nmf@fit@W)
-results_nmf_W['y'] <- df_new_clients['y']
-
-fig_age <- ggplot(results_nmf_W, aes(x = X1, y = X2, color = y)) +
-  geom_point() +
-  ggtitle('NMF with age variable')
-
-fig_base | fig_age
-```
-
 
 \subsection{Classification}
 Similar to the 1. project
