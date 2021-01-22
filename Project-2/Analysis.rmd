@@ -35,6 +35,15 @@ library(latex2exp)
 library(fastICA)
 library(NMF)
 
+# Models
+library(mlr3)
+library(mlr3learners)
+library(mlr3pipelines)
+
+library(kknn)
+library(MASS)
+library(ranger)
+
 df <- read_csv2('data/bank-additional-full.csv')
 df[, 'y'] <- as.factor(df$y)
 
@@ -205,15 +214,15 @@ We've tested the different combinations of PCA - with / without scaling and with
  
 \begin{figure}
 ```{r}
-results_pca <- df_new_clients %>% 
+results_pca_client <- df_new_clients %>% 
   dplyr::select(-y) %>% 
   dplyr::select(job, marital, education, housing, loan) %>% 
   DataExplorer::dummify() %>% 
   prcomp(scale. = FALSE, center = TRUE)
 
-results_pca_df <- data.frame(results_pca$x)
-results_pca_df['y'] <- df_new_clients['y']
-results_pca_df %>% 
+results_pca_df_client <- data.frame(results_pca_client$x)
+results_pca_df_client['y'] <- df_new_clients['y']
+results_pca_df_client %>% 
   ggplot(aes(x = PC1, y = PC2, color = y)) +
   geom_point(size = 1)
 ```
@@ -402,7 +411,140 @@ After quick search we've obtained the following results which are presented also
 Concluding, multidimensional scaling gave us also very interesting results, especially in context of data visualization / understanding and grouping. It also may be very powerful tool for us in the next sections connected to classification and cluster analysis.
 
 \subsection{Classification}
-Similar to the 1. project
+In this section we would like to evaluate if dimension reduction techniques could improve results in classification task. The whole set up will be the same as in previous report, i.e. AUCPR will be our main objective metric with 5-Fold Stratified Cross Validation. We will test the following configurations of data:
+\begin{itemize}
+  \item dataset with all columns with One Hot Encoding on \textit{job}, \textit{marital}, \textit{education} variables,
+  \item first 17 columns of the PCA on the whole dataset,
+  \item first 5 columns of the PCA on the whole dataset,
+  \item first 2 columns of the PCA on the whole dataset
+\end{itemize}
+and we will try the following models:
+\begin{itemize}
+  \item Logistic Regression,
+  \item Decision Tree,
+  \item Random Forest (with 50 and 100 trees).
+\end{itemize}
+
+We will skip testing results obtained during multidimensional scaling as it's not possible to use whole dataset and the results between different transformations won't be comparable. Moreover we're testing different number of PCA components to check if we can compress our dataset while perserving similar accuracy. 
+
+During the testing it turned out that our set up from first project was wrong because R treated `\textit{no} in target variables as {1} and because of that our results was so superior. In the following experiments we've fixed this bug.
+
+```{r}
+measures = list(
+  msr("classif.precision", id = "precision_train", predict_sets = "train"),
+  msr("classif.precision", id = "precision_test"),
+  msr("classif.recall", id = "recall_train", predict_sets = "train"),
+  msr("classif.recall", id = "recall_test"),
+  msr("classif.prauc", id = "aucpr_train", predict_sets = "train"),
+  msr("classif.prauc", id = "aucpr_test")
+)
+
+resamplings = rsmp("cv", folds = 5)
+```
+
+```{r}
+df_modeling <- df_new_clients %>% 
+  DataExplorer::dummify(select = c('job', 'marital', 'education'))
+
+df_modeling_pca_17 <- results_pca_df %>% 
+  dplyr::select(-PC18, -PC19, -PC20, -PC21, -PC22, -PC23)
+
+df_modeling_pca_5 <- results_pca_df %>% 
+  dplyr::select(PC1, PC2, PC3, PC4, PC5, y)
+
+df_modeling_pca_2 <- results_pca_df %>% 
+  dplyr::select(PC1, PC2, y)
+
+task_dummified = TaskClassif$new(id = "standard", backend = df_modeling, target = 'y', positive = 'yes')
+task_dummified$col_roles$stratum = 'y'
+
+task_pca_17 = TaskClassif$new(id = "pca_17", backend = df_modeling_pca_17, target = 'y', positive = 'yes')
+task_pca_17$col_roles$stratum = 'y'
+
+task_pca_5 = TaskClassif$new(id = "pca_5", backend = df_modeling_pca_5, target = 'y', positive = 'yes')
+task_pca_5$col_roles$stratum = 'y'
+
+task_pca_2 = TaskClassif$new(id = "pca_2", backend = df_modeling_pca_2, target = 'y', positive = 'yes')
+task_pca_2$col_roles$stratum = 'y'
+
+tasks = c(
+  task_dummified,
+  task_pca_17,
+  task_pca_5,
+  task_pca_2
+)
+```
+
+```{r}
+learners = list(
+  lrn("classif.log_reg", id = "log-reg", predict_type = "prob", predict_sets = c("train", "test")),
+  lrn("classif.ranger", id = "decision-tree", num.trees = 1, predict_type = "prob", predict_sets = c("train", "test")),
+  lrn("classif.ranger", id = "random-forest-50", num.trees = 50, predict_type = "prob", predict_sets = c("train", "test")),
+  lrn("classif.ranger", id = "random-forest-100", num.trees = 100, predict_type = "prob", predict_sets = c("train", "test"))
+)
+
+design = benchmark_grid(tasks, learners, resamplings)
+
+bmr = benchmark(design)
+results_classification <- bmr$aggregate(measures)
+```
+
+```{r}
+results_classification %>% 
+  dplyr::select(-nr, -resample_result, -resampling_id, -iters) %>% 
+  mutate(across(where(is.numeric), round, 10)) %>% 
+  arrange(desc(aucpr_test)) %>% 
+  xtable(
+    caption = "Results of the classification accuracy of the models trained on dataset with and without PCA transformations.",
+    label = "tab:classification"
+  )
+```
+
+The results of the classification can be found in Table \ref{tab:classification}. It turned out that the best model is Random Forest with 100 trees on dataset without PCA transformation. The model looks very overfitted however we've set a lot of hyperparameters as defaults and it would be possible to obtain better results. We can also observe that almost all models trained on PCA transformed dataset were worse. Moreover the smaller number of dimensions of PCA transformation the worse results were. 
+
+As we remember from our first report our dataset was very unbalanced with `r df_new_clients %>% filter(y == 'yes') %>% count() %>% pull()` \textit{yes} values and `r df_new_clients %>% filter(y == 'no') %>% count() %>% pull()` \textit{no} values. In the next experiment we will try undersampling and oversampling with ratio $\frac{1}{10}$ and $10$ respectively. We will also only try Logistic Regression and Random Forest with 100 trees as they were best performing and also we will only use whole dataset and transformed on PCA with first 17 components as lower number of components always performed worse.
+
+```{r}
+po_under = po("classbalancing", id = "undersample", adjust = "major", reference = "major", shuffle = FALSE, ratio = 1 / 10)
+po_over = po("classbalancing", id = "oversample", adjust = "minor", reference = "minor", shuffle = FALSE, ratio = 10)
+
+learners = list(
+  lrn("classif.log_reg", id = "log-reg", predict_type = "prob"),
+  lrn("classif.ranger", id = "random-forest-100", num.trees = 100, predict_type = "prob"),
+  GraphLearner$new(po_under %>>% lrn("classif.log_reg", predict_type = "prob"), id = 'log.reg.under'),
+  GraphLearner$new(po_over %>>% lrn("classif.log_reg", predict_type = "prob"), id = 'log.reg.over'),
+  GraphLearner$new(po_under %>>% lrn("classif.ranger", num.trees = 100, predict_type = "prob"), id = 'rf.100.under'),
+  GraphLearner$new(po_over %>>% lrn("classif.ranger", num.trees = 100, predict_type = "prob"), id = 'rf.100.over')
+)
+
+for (l in learners){
+  l$predict_sets <- c("train", "test")
+}
+
+tasks = c(
+  task_dummified,
+  task_pca_17
+)
+
+design_balancing = benchmark_grid(tasks, learners, resamplings)
+
+bmr_balancing = benchmark(design_balancing)
+results_balancing <- bmr_balancing$aggregate(measures)
+```
+
+
+```{r}
+results_balancing %>% 
+  dplyr::select(-nr, -resample_result, -resampling_id, -iters) %>% 
+  mutate(across(where(is.numeric), round, 10)) %>% 
+  arrange(desc(aucpr_test)) %>% 
+  xtable(
+    caption = "Results of the classification accuracy of the models trained on dataset with and without PCA transformations with usage of undersampling and oversampling.",
+    label = "tab:classification-balancing"
+  )
+```
+
+The results of balancing experiment can be found in Table \ref{tab:classification-balancing}. Please note that \textit{ranger} in \textit{learner_id} is alias for Random Forest model with 100 trees. We can observe that also this time Random Forest on not transformed and unbalanced dataset was the best one. However the results of the undersampled Random Forest on not transformed dataset has quite close results in terms of AUCPR however it's not so overfitted. Unfortunately also this time the PCA transformation has not improved the results.
 
 \subsection{Clustering}
 Objective: group objects according to their similarity
