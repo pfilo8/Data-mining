@@ -39,10 +39,14 @@ library(NMF)
 library(mlr3)
 library(mlr3learners)
 library(mlr3pipelines)
-
 library(kknn)
 library(MASS)
 library(ranger)
+
+# Clustering
+library(factoextra)
+library(cluster)
+library(NbClust)
 
 df <- read_csv2('data/bank-additional-full.csv')
 df[, 'y'] <- as.factor(df$y)
@@ -377,7 +381,7 @@ mds_client <- cmdscale(dissimilarities_client)
 ```
 
 \begin{figure}
-```{r}
+```{r fig.height=4, fig.width=8}
 mds_client.df <- mds_client %>% data.frame()
 mds_client.df <- bind_cols(mds_client.df, df_new_clients_sample)
 
@@ -392,7 +396,7 @@ mds_client.df %>%
 We can observe results of the MDS in context of only client data on Figure \ref{fig:mds-client}. Also here we can find some separate groups. However this time we also cannot see any particular pattern in context of target variable. In next step we will try to find which variables separates groups.
 
 \begin{figure}
-```{r}
+```{r fig.height=4, fig.width=8}
 mds_client.df %>% 
   mutate(
     housing = factor(housing),
@@ -546,7 +550,234 @@ results_balancing %>%
 
 The results of balancing experiment can be found in Table \ref{tab:classification-balancing}. Please note that \textit{ranger} in \textit{learner_id} is alias for Random Forest model with 100 trees. We can observe that also this time Random Forest on not transformed and unbalanced dataset was the best one. However the results of the undersampled Random Forest on not transformed dataset has quite close results in terms of AUCPR however it's not so overfitted. Unfortunately also this time the PCA transformation has not improved the results.
 
+Summary...
+
 \subsection{Clustering}
+In this section we will focus on cluster analysis task. Our goal will be to group clients according to their similarity. We've done some part of the work in Dimension Reduction section as we were able to find some groups of clients after PCA and MDS transformations however in this part we will do that in more quantitative manner. We will test the following methods:
+\begin{itemize}
+  \item k-means,
+  \item Partition Around Medoids (PAM),
+  \item Aglomerative Nesting (AGNES)
+\end{itemize}
+and perform quality assesment of cluster analysis results. As we mentioned we want to group clients, so we will use only the features connected to clients, i.e.
+ \begin{itemize}
+  \item job,
+  \item marital
+  \item education,
+  \item housing,
+  \item loan.
+\end{itemize}
+
+\subsubsetction{K-means}
+In this section we will perform cluster analysis using the K-means algorithm. We will begin our journey with this algorithm by looking for within-cluster and between-cluster dispersion depending on number of K. Then we will try to choose optimal number of clusters and analyse results for selected K. For this algorithm we also performed one hot encoding on our dataset.
+
+```{r}
+df_clustering <- df_new_clients %>% 
+  dplyr::select(-y) %>% 
+  dplyr::select(job, marital, education, housing, loan) %>% 
+  DataExplorer::dummify()
+```
+
+```{r}
+Within   <- c()
+Between  <- c()
+Total    <- c()
+
+K.range <- 1:20
+
+for (k in K.range)
+{
+  print(k)
+  kmeans.k  <- kmeans(df_clustering, centers=k, iter.max=10, nstart=10)
+  Within  <- c(Within, kmeans.k$tot.withinss)	# total within-cluster sum of squares =  sum(withinss))
+  Between <- c(Between, kmeans.k$betweenss) # between-cluster sum of squares
+  Total   <- c(Total,kmeans.k$totss) 	# total sum of squares.
+  # remark: Total == Within + Between
+}
+
+y.range <- range(c(Within, Between, Total))
+
+results_kmeans <- data.frame(
+  K = K.range,
+  Within = Within,
+  Between = Between,
+  Total = Total
+) 
+```
+
+\begin{figure}
+```{r fig.height=4, fig.width=8}
+results_kmeans %>% 
+  reshape2::melt(id.vars = c("K")) %>% 
+  ggplot(aes(x = K, y = value, color = variable)) +
+    geom_line() + 
+    geom_point() +
+    scale_x_discrete(limits = K.range) + 
+    ylim(range(c(Within, Between, Total))) +
+    scale_color_manual(values = c('red', 'blue', 'black')) +
+    ggtitle("Comparison of the within-cluster and between-cluster dispersion")
+```
+\caption{Values of the within-cluster and between-cluster dispersion for different K in K-means algorithm.}
+\label{fig:kmeans-dispersion}
+\end{figure}
+
+On the Figure \ref{fig:kmeans-dispersion} we can observe how does within-cluster and between-cluster changes depending on K. We can observe that we obtained standard elbow shape for both statistics however without a typical sharp value decrease in some point. Because of that we cannot easily choose optimal K. Let's try to find optimal value of K using silhouette statistic.
+
+\begin{figure}
+```{r fig.height=4, fig.width=8}
+fviz_nbclust(df_clustering, FUNcluster = kmeans, method = "silhouette", k.max = 20)
+```
+\caption{Values of average silhouette width for different number of cluster K in K-means algorithm.}
+\label{fig:kmeans-average-silhouette}
+\end{figure}
+
+The obtained results are presented on Figure \fig{fig:kmeans-average-silhouette}. Also this time we cannot easily select one best value as the values doesn't vary much. However we will select $K$ equal $13$ as the optimal one as it's very close to the best value $K = 18$ however it's a bit smaller value which enables us to more easily analyse the obtained clusters.
+
+\begin{figure}
+```{r fig.height=4, fig.width=8}
+kmeans.k13 <- kmeans(df_clustering, centers=13, iter.max=15, nstart=10)
+
+fviz_cluster(kmeans.k13, df_clustering)
+```
+\caption{Clusters obtained by K-means algorithm presented in 2D PCA space.}
+\label{fig:kmeans-pca-space}
+\end{figure}
+
+In order to better understand our results we've plotted them in 2D PCA space on Figure \fig{fig:kmeans-pca-space}. We can observe some distinct groups even in this 2D visualization which fill us with hope that obtained results will be interpretable.
+
+\begin{figure}
+```{r fig.height=4, fig.width=8}
+sil.kmeans <- silhouette(kmeans.k13$cluster, dist(df_clustering))
+fviz_silhouette(sil.kmeans, xlab="K-means")
+```
+\caption{Clusters silhouette plot for K-means algorithm with K = 13.}
+\label{fig:kmeans-silhouette}
+\end{figure}
+
+The results of the silhouette for individual clusters are presented on Figure \fig{fig:kmeans-silhouette}. We can observe that some of the clusters have very high silhouette values which means that they are properly assigned, but some of them have small results or even negative which suggests that some observations were incorrectly assigned. Especially the four negative peaks are probably the results of our choice of $13$ clusters instead of $18$.
+
+Let us also compare the results in context of different categories and find some very homogenous groups. We will start with target variable \textit{y} however we don't expect that we will find some specific cluster with only \textit{yes} responses.
+
+```{r results='asis'}
+table(kmeans.k13$cluster, df_new_clients$y) %>% 
+  xtable(
+    caption = "Clusters vs. target variable",
+    label = "tab:kmeans-cluster-vs-target"
+  )
+```
+
+The results can be found in Table \ref{tab:kmeans-cluster-vs-target}. As we expected there is no clear separation between clients' responses.
+
+In context of cluster interpretation we can extract one more useful information from Figure \ref{fig:kmeans-silhouette}. If cluster have very large silhouette it means that it should represent quite homogenuous group. Using that information we have found that
+\begin{itemize}
+  \item cluster 6 represents clients with basic education, married, blue-collar job and mostly without loan (which is also cluster found during visualization of PCA transformed data),
+  \item cluster 13 represents clients with university degree, married, managment job and mostly without loan (which also was previously recognized),
+  \item cluster 2 represents clients with universtiy degree, married, mostyle administration job and mostly with house,
+  \item cluster 12 represents clients with professional course, mostly working as a technicians.
+\end{itemize}
+
+```{r}
+table(kmeans.k13$cluster, df_new_clients$education)
+```
+```{r}
+table(kmeans.k13$cluster, df_new_clients$marital)
+```
+```{r}
+table(kmeans.k13$cluster, df_new_clients$job)
+```
+```{r}
+table(kmeans.k13$cluster, df_new_clients$housing)
+```
+```{r}
+table(kmeans.k13$cluster, df_new_clients$loan)
+```
+
+In our opinion these results give us very interesting insigth into our dataset and may be very helpful in process of better understanding of clients in bank.
+
+\subsubsection{PAM}
+In this section we will very similar analysis to the previous one on K-means however this time we will use another technique - Partition Around Medoids (PAM). This is more robust generalization of K-means in which we will use dissimilarity matrix with gower distance. This will allow us to encode categorical values in different way and we expect to obtain a little bit different results as we obtained different results for PCA and MDS. Because in this section we will use dissimilarity matrix we will perform stratified sampling the same way as we did in MDS.
+
+```{r}
+pam.silhouettes <- c()
+
+K.range <- 2:15
+
+for (k in K.range){
+  print(k)
+  pam.k <- pam(x = dissimilarities_client, k = k, diss = TRUE)
+  sil.pam <- silhouette(pam.k$clustering, dissimilarities_client)
+  pam.silhouettes <- c(pam.silhouettes, mean(sil.pam[, 3]))
+}
+```
+
+\begin{figure}
+```{r fig.height=4, fig.width=8}
+data.frame(
+  K = K.range,
+  Silhouette = pam.silhouettes
+) %>% 
+  ggplot(aes(x = K, y = Silhouette)) +
+    geom_line() + 
+    geom_point() +
+    scale_x_discrete(limits = K.range) + 
+    ggtitle("Comparison of the average silhouette vs K for PAM algorithm.")
+```
+\caption{Values of average silhouette width for different number of cluster K in PAM algorithm.}
+\label{fig:pam-average-silhouette}
+\end{figure}
+
+Firstly, we begin our analysis with finding optimal number of clusters. As we can observe on Figure \ref{fig:pam-average-silhouette} the optimal values is equal 13 - the same as we selected in K-means algorithm. Let's check how does silhouette looks for selected K.
+
+\begin{figure}
+```{r}
+pam.k13 <- pam(x = dissimilarities_client, k = 13, diss = TRUE)
+sil.pam13 <- silhouette(pam.k13$clustering, dissimilarities_client)
+fviz_silhouette(sil.pam13, xlab="K-means")
+```
+\caption{Clusters silhouette plot for PAM algorithm with K = 13.}
+\label{fig:pam-silhouette}
+\end{figure}
+
+The silhouette plot is presented on Figure \ref{fig:pam-silhouette}. Most of the obtained clusters are quite consistent in terms of silhouette statistics and in the next step we will explore them in more details.
+
+```{r results='asis'}
+table(pam.k13$clustering, df_new_clients_sample$y)
+  xtable(
+    caption = "Clusters vs. target variable",
+    label = "tab:kmeans-cluster-vs-target"
+  )
+```
+
+First of all, this time we also could find any structure in terms of target variable. Moreover we found that:
+\begin{itemize}
+  \item cluster 1 represents clients with university degree, married, administration / management / self-employed job with house and without loan,
+  \item cluster 2 represents clients with basic education, mostly married and working as blue-collars with house and without loan,
+  \item cluster 4 represents clients with mostly high school degree, married, working in services, with house and without loan,
+  \item cluster 7 represents clients with university degree, single, administrative job, without house and without loan,
+  \item cluster 9 represents clients with basic education, mostly married, working as blue-collars without house and without loan,
+  \item cluster 13 represents clients with professional courses, mostly married, working as technicians, without housing and loans.
+\end{itemize}
+As we can observe the results are also very distinguishable however as we were analyzing the results we found that the main splitting criterion was housing and loans where for k-means it was mostly education, job and marital status. However it's quite natural as we used different type of measures for both algorithms. We have also seen differences between PCA and MDS representation and here we've corresponding results.
+
+```{r}
+table(pam.k13$clustering, df_new_clients_sample$education)
+```
+```{r}
+table(pam.k13$clustering, df_new_clients_sample$marital)
+```
+```{r}
+table(pam.k13$clustering, df_new_clients_sample$job)
+```
+```{r}
+table(pam.k13$clustering, df_new_clients_sample$housing)
+```
+```{r}
+table(pam.k13$clustering, df_new_clients_sample$loan)
+```
+
+\subsubsection{AGNES}
+
+
 Objective: group objects according to their similarity
 Methods: 
  - k-means
