@@ -143,7 +143,7 @@ indices <- results_pca_df %>%
   pull(n)
 
 df_new_clients[indices, ] %>% 
-  select(emp.var.rate, cons.price.idx, cons.conf.idx, euribor3m) %>% 
+  dplyr::select(emp.var.rate, cons.price.idx, cons.conf.idx, euribor3m) %>% 
   head(20) %>% 
   xtable(
     caption = "Example data from PCA's (without scaling) one cluster.",
@@ -243,7 +243,7 @@ indices <- results_pca_df %>%
   pull(n)
 
 df_new_clients[indices, ] %>% 
-  select(job, marital, education, housing, loan) %>% 
+  dplyr::select(job, marital, education, housing, loan) %>% 
   head(20) %>% 
   xtable(
     caption = "Example data from PCA's for cluster analysis one cluster.",
@@ -308,7 +308,7 @@ df_new_client_no <- df_new_clients %>%
 df_new_clients_sample <- rbind.data.frame(df_new_client_no, df_new_client_yes)
 ```
 
-```{r}
+```{r cache=TRUE}
 dissimilarities <- df_new_clients_sample %>% 
   dplyr::select(-y) %>% 
   mutate(
@@ -363,7 +363,7 @@ plot_housing / plot_loan / plot_euribor
 We conclude from Figure \ref{fig:mds-housing-loan-euribor} that main splitting factor was housing. The other two the most interesting variables in our opinion was loan and euribor. Separation and specific areas of subgroups for the other variables also could be seen however not so clearly. Similarily to PCA example let's explore only client specific data.
 
 
-```{r}
+```{r cache=TRUE}
 dissimilarities_client <- df_new_clients_sample %>% 
   dplyr::select(-y) %>% 
   mutate(
@@ -479,7 +479,7 @@ tasks = c(
 )
 ```
 
-```{r}
+```{r cache=TRUE}
 learners = list(
   lrn("classif.log_reg", id = "log-reg", predict_type = "prob", predict_sets = c("train", "test")),
   lrn("classif.ranger", id = "decision-tree", num.trees = 1, predict_type = "prob", predict_sets = c("train", "test")),
@@ -508,7 +508,7 @@ The results of the classification can be found in Table \ref{tab:classification}
 
 As we remember from our first report our dataset was very unbalanced with `r df_new_clients %>% filter(y == 'yes') %>% count() %>% pull()` \textit{yes} values and `r df_new_clients %>% filter(y == 'no') %>% count() %>% pull()` \textit{no} values. In the next experiment we will try undersampling and oversampling with ratio $\frac{1}{10}$ and $10$ respectively. We will also only try Logistic Regression and Random Forest with 100 trees as they were best performing and also we will only use whole dataset and transformed on PCA with first 17 components as lower number of components always performed worse.
 
-```{r}
+```{r cache=TRUE}
 po_under = po("classbalancing", id = "undersample", adjust = "major", reference = "major", shuffle = FALSE, ratio = 1 / 10)
 po_over = po("classbalancing", id = "oversample", adjust = "minor", reference = "minor", shuffle = FALSE, ratio = 10)
 
@@ -548,9 +548,7 @@ results_balancing %>%
   )
 ```
 
-The results of balancing experiment can be found in Table \ref{tab:classification-balancing}. Please note that \textit{ranger} in \textit{learner_id} is alias for Random Forest model with 100 trees. We can observe that also this time Random Forest on not transformed and unbalanced dataset was the best one. However the results of the undersampled Random Forest on not transformed dataset has quite close results in terms of AUCPR however it's not so overfitted. Unfortunately also this time the PCA transformation has not improved the results.
-
-Summary...
+The results of balancing experiment can be found in Table \ref{tab:classification-balancing}. Please note that \textit{ranger} in \textit{learner_id} is alias for Random Forest model with 100 trees. We can observe that also this time Random Forest on not transformed and unbalanced dataset was the best one. However the results of the undersampled Random Forest on not transformed dataset has quite close results in terms of AUCPR however it's not so overfitted. Unfortunately also this time the PCA transformation has not improved the results. As a potential next step we would probably take Random Forest model with undersampling technique and tune hyperparameters to obtain even better results.
 
 \subsection{Clustering}
 In this section we will focus on cluster analysis task. Our goal will be to group clients according to their similarity. We've done some part of the work in Dimension Reduction section as we were able to find some groups of clients after PCA and MDS transformations however in this part we will do that in more quantitative manner. We will test the following methods:
@@ -578,7 +576,7 @@ df_clustering <- df_new_clients %>%
   DataExplorer::dummify()
 ```
 
-```{r}
+```{r cache=TRUE}
 Within   <- c()
 Between  <- c()
 Total    <- c()
@@ -697,7 +695,7 @@ In our opinion these results give us very interesting insigth into our dataset a
 \subsubsection{PAM}
 In this section we will very similar analysis to the previous one on K-means however this time we will use another technique - Partition Around Medoids (PAM). This is more robust generalization of K-means in which we will use dissimilarity matrix with gower distance. This will allow us to encode categorical values in different way and we expect to obtain a little bit different results as we obtained different results for PCA and MDS. Because in this section we will use dissimilarity matrix we will perform stratified sampling the same way as we did in MDS.
 
-```{r}
+```{r cache=TRUE}
 pam.silhouettes <- c()
 
 K.range <- 2:15
@@ -729,10 +727,10 @@ data.frame(
 Firstly, we begin our analysis with finding optimal number of clusters. As we can observe on Figure \ref{fig:pam-average-silhouette} the optimal values is equal 13 - the same as we selected in K-means algorithm. Let's check how does silhouette looks for selected K.
 
 \begin{figure}
-```{r}
+```{r fig.height=4, fig.width=8}
 pam.k13 <- pam(x = dissimilarities_client, k = 13, diss = TRUE)
 sil.pam13 <- silhouette(pam.k13$clustering, dissimilarities_client)
-fviz_silhouette(sil.pam13, xlab="K-means")
+fviz_silhouette(sil.pam13, xlab="PAM")
 ```
 \caption{Clusters silhouette plot for PAM algorithm with K = 13.}
 \label{fig:pam-silhouette}
@@ -776,36 +774,116 @@ table(pam.k13$clustering, df_new_clients_sample$loan)
 ```
 
 \subsubsection{AGNES}
+In this section we will analyze our client dataset using AGNES algorithm which represents hierarchical methods of clustering, i.e. we firstly create clusters and then decide what number of clusters we want to obtain by looking on dendograms. This time we will also use dissimilarity matrix of clients with sampling.
 
+```{r cache=TRUE}
+results_agnes_average <- agnes(dissimilarities_client, diss = TRUE, method = 'average')
+results_agnes_single <- agnes(dissimilarities_client, diss = TRUE, method = 'single')
+results_agnes_complete <- agnes(dissimilarities_client, diss = TRUE, method = 'complete')
+```
 
-Objective: group objects according to their similarity
-Methods: 
- - k-means
- - Partition Around Medoids (PAM)
- - Aglomerative Nesting (AGNES) 
- - Other (HDBSCAN?)
-Quality assessment of cluster analysis results:
- - Average silhouette vs different K
- - Separation / Compactness / Connectedness
- 
- Ideas:
-  - Use Custering LARge Applications (CLARA) instead PAM if computations are slow
-  - Different dissimilarity measures - Gower distance
-  - Analyse what are the characteristic properties of objects thatwere assign to a given cluster (for example, in individualclusters you can analyse: average values for numerical featuresand counts for qualitative features).
-  - Dendogram and banner plot for AGNES
-  - Single / Complete / Average linkage for AGNES
-  - Dunn index for cluster results analysis
+```{r cache=TRUE}
+fig_average <- fviz_dend(results_agnes_average, cex=0.4, main="Dendrogram - average linkage")
+fig_single <- fviz_dend(results_agnes_single, cex=0.4, main="Dendrogram - single linkage")
+fig_complete <- fviz_dend(results_agnes_complete, cex=0.4, main="Dendrogram - complete linkage")
+```
 
-Cluster results analysis:  
- - Internal validation:Use the averagesilhouette indexto comparethe results obtained for different clustering algorithms (e.g. PAMand AGNES) and for a different number of clustersK. Try to decideon the optimal number of clusters.
- - External validation:Use simple contingency table (confusionmatrix) to compare clustering results with real class membership. Compare results for different clustering algorithms, includingpartitioning and hierarchical methods. (Hint: you can use functionmatchClasses{e1071} to find anoptimal assignment (mapping) between two set of labels).
+\begin{figure}
+```{r fig.width=5, fig.height=8}
+fig_average / fig_single / fig_complete
+```
+\caption{Dendograms obtained for AGNES algorithm using average, single and complete linkage.}
+\label{fig:agnes-dendograms}
+\end{figure}
+
+The results of the clustering are presented on dendograms on Figure \ref{fig:agnes-dendograms}. As we can observe the results of single linkage are very unclear and it would be very hard to extract some meaningful clusters. However complete linkage and average linkage are doing good job and we can recognize some groups. Let's explore in more details average linkage version of AGNES algorithm.
+
+```{r}
+agnes.silhouettes <- c()
+
+K.range <- 2:40
+
+for (k in K.range){
+  print(k)
+  agnes.k <- cutree(results_agnes_average, k = k)
+  sil.agnes <- silhouette(agnes.k, dissimilarities_client)
+  agnes.silhouettes <- c(agnes.silhouettes, mean(sil.agnes[, 3]))
+}
+```
+
+\begin{figure}
+```{r fig.height=4, fig.width=9}
+data.frame(
+  K = K.range,
+  Silhouette = agnes.silhouettes
+) %>% 
+  ggplot(aes(x = K, y = Silhouette)) +
+    geom_line() + 
+    geom_point() +
+    scale_x_discrete(limits = K.range) + 
+    ggtitle("Comparison of the average silhouette vs K for AGNES (average linkage) algorithm.")
+```
+\caption{Values of average silhouette width for different number of cluster K in AGNES (average linkage) algorithm.}
+\label{fig:agnes-average-silhouette}
+\end{figure}
+
+On the Figure \ref{fig:agnes-average-silhouette} we present average silhouette depending on number of clusters. We can observe that it's from up K equal 3 it's nondecreasing up to around K equal 30. Because of that we selected K = 28 which is maxium in our selected range. Let's find out what values are inside corresponding clusters.
+
+\begin{figure}
+```{r fig.height=4, fig.width=8}
+agnes.k28 <- cutree(results_agnes_average, k = 28)
+sil.agnes28 <- silhouette(agnes.k28, dissimilarities_client)
+fviz_silhouette(sil.agnes28, xlab="AGNES")
+```
+\caption{Clusters silhouette plot for AGNES algorithm with K = 28.}
+\label{fig:pam-silhouette}
+\end{figure}
+
+From Figure \ref{fig:pam-silhouette} we can observe that most of the clusters has very high value of silhouette and only few of them has some negative values. The results look very interesting and now check how the clusters look inside.
+
+```{r}
+table(agnes.k28, df_new_clients_sample$y)
+```
+
+As previously we weren't be able to find groups of clients which were mostly subscribing term deposits. However we can procede with exploration of obtained clusters. Based on cluster assignments and values for corresponding clients' variables we found out following things.
+\begin{itemize}
+  \item Cluster 8 represents clients with university degree, single, mostly working in administration, without house and loan.
+  \item Cluster 10 represents clients with university degree, working in administration, with house and without loan.
+  \item Cluster 11 represents clients with basic education, married, working as blue-collars, with loans.
+  \item Other clusters have also interesting representations however provided ones were the most representative.
+\end{itemize}
+As we can observe the results are also quite similar to the previously obtained. Because of the higher number of cluster our groups are more granular and consistent which could be very useful for clients profiling.
+
+```{r}
+table(agnes.k28, df_new_clients_sample$education)
+```
+```{r}
+table(agnes.k28, df_new_clients_sample$marital)
+```
+```{r}
+table(agnes.k28, df_new_clients_sample$job)
+```
+```{r}
+table(agnes.k28, df_new_clients_sample$housing)
+```
+```{r}
+table(agnes.k28, df_new_clients_sample$loan)
+```
+
+During this section we've tested a few clustering algorihtm thanks to which we've able to better understand clients group in our dataset. We've found consistent groups of clients, splitted them into clearly separable groups and due to that we've gained better understanding of data structure. This information could be very beneficial for analysts for futher analysis process, e.g. clients segmentation / pricing or for stakeholders which by better understanding of their client base could take further actions related to the whole business.
   
-  Notes:
-   - AGNES will probably require data sampling
-  
-\section{Results and discussion}
-\label{sec:results}
+\section{Summary and discussion}
+\label{sec:summary}
 
+During our second part of the journey with Marketing dataset we've gained even better understanding of the whole dataset.
+
+Firstly, we've used dimension reduction techniques to visualize our dataset from different points of view. We were able to find some structure in the dataset, especially in the part connected to the clients where we found some specific groups as for example blue-collar workers, maried and with basic education. However in context of term subscription we weren't able to find such groups.
+
+Secondly, we've prepared classification model for detecting if a new client will be interested in subscription of term deposit. During conducted experiments we've spotted mistake in our previous report which we fixed in this one. We've been testing if PCA transformation could improve results of the classification model however it didn't happened. Moreover we've tested one more time hypothesis if resampling techniques could improve our results but also this technique didn't yield better results. After all our best model was Random Forest which in next step could be improved by hyperparameter tuning.
+
+Lastly, we've performed cluster analysis. We've tested different algorithm, both partitioning and hierarchical ones, which showed us our data from different perspectives. We were able to distinguish many different, interesting groups of clients which alowed us to better understand and profile customers of the bank. Moreover the challenging part was connected to the computations as we needed to sample data to compute all required informations. One of the further steps would be to overcome this limitation.
+
+To conclude, this project showed us how many interesting informations can be found in the dataset and how important is to look into data from different perspectives. Moreover we are now familiar with many different, useful data mining techniques which will be very beneficial for us in the future.
 
 \bibliographystyle{unsrt}
 \bibliography{references}
